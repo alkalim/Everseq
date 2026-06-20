@@ -26,41 +26,47 @@ for bundle in .build/"$CONFIG"/*.bundle; do
   cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
-echo "Building app icon…"
-# 1) Legacy .icns — the Finder/Launchpad icon on older macOS, and the ONLY icon
-#    when actool isn't available. Built from the pre-composited glyph-on-squircle.
-ICONSET="$(mktemp -d)/AppIcon.iconset"
-mkdir -p "$ICONSET"
-for size in 16 32 128 256 512; do
-  sips -z $size $size Icon/AppIconFallback.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-  sips -z $((size*2)) $((size*2)) Icon/AppIconFallback.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-rm -rf "$(dirname "$ICONSET")"
+# Static .icns from the pre-rendered fallback PNG (used only when actool/Xcode
+# isn't available — e.g. a Command-Line-Tools-only machine).
+build_static_icns() {
+  local iconset; iconset="$(mktemp -d)/AppIcon.iconset"
+  mkdir -p "$iconset"
+  for size in 16 32 128 256 512; do
+    sips -z $size $size Icon/AppIconFallback.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    sips -z $((size*2)) $((size*2)) Icon/AppIconFallback.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+  rm -rf "$(dirname "$iconset")"
+}
 
-# 2) macOS 26 themable icon ("Icon & widget style"): compile the Icon Composer
-#    source (Icon/AppIcon.icon) into Assets.car. This REQUIRES `actool`, which
-#    ships ONLY with Xcode 26 — there is no Command-Line-Tools / iconutil path.
-#    With actool present the icon becomes fully OS-themable (Default/Dark/Clear/
-#    Tinted); without it we ship just the static .icns above (no theming).
-ICON_NAME_ENTRY=""
-if xcrun --find actool >/dev/null 2>&1 && [ -d Icon/AppIcon.icon ]; then
-  echo "  actool found — compiling themable icon (Assets.car)…"
-  if xcrun actool Icon/AppIcon.icon \
+echo "Building app icon…"
+# The icon is authored in Everseq.icon (Icon Composer). With actool (Xcode) we
+# compile it to BOTH:
+#   • Assets.car   → macOS 26 "Icon & widget style" theming (Default/Dark/Tinted/Clear)
+#   • Everseq.icns → backwards-compatible static icon used on macOS 15 and earlier
+# Without actool we fall back to a static .icns from Icon/AppIconFallback.png.
+ICON_FILE="AppIcon"     # CFBundleIconFile value (basename, no extension)
+ICON_NAME_ENTRY=""      # optional CFBundleIconName block (only when themable)
+if xcrun --find actool >/dev/null 2>&1 && [ -d Everseq.icon ]; then
+  echo "  compiling Everseq.icon (themable Assets.car + backwards-compatible .icns)…"
+  if xcrun actool Everseq.icon \
         --compile "$APP/Contents/Resources" \
-        --app-icon AppIcon \
+        --app-icon Everseq \
         --platform macosx \
         --minimum-deployment-target 14.0 \
         --output-partial-info-plist "$(mktemp)" >/dev/null 2>&1 \
-     && [ -f "$APP/Contents/Resources/Assets.car" ]; then
-    ICON_NAME_ENTRY=$'\n    <key>CFBundleIconName</key>\n    <string>AppIcon</string>'
+     && [ -f "$APP/Contents/Resources/Assets.car" ] \
+     && [ -f "$APP/Contents/Resources/Everseq.icns" ]; then
+    ICON_FILE="Everseq"
+    ICON_NAME_ENTRY=$'\n    <key>CFBundleIconName</key>\n    <string>Everseq</string>'
     echo "  themable icon built ✓"
   else
-    echo "  ⚠️  actool failed — falling back to the static .icns (no OS theming)."
+    echo "  ⚠️  actool failed — using static .icns fallback (no theming)."
+    build_static_icns
   fi
 else
-  echo "  ⚠️  actool not found (needs Xcode 26). Shipping the static .icns only —"
-  echo "      this icon will NOT respond to System Settings ▸ Icon & widget style."
+  echo "  actool not found (needs Xcode) — using static .icns fallback (no theming)."
+  build_static_icns
 fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -75,7 +81,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key>
     <string>Everseq</string>
     <key>CFBundleIconFile</key>
-    <string>AppIcon</string>$ICON_NAME_ENTRY
+    <string>$ICON_FILE</string>$ICON_NAME_ENTRY
     <key>CFBundleIdentifier</key>
     <string>com.everseq.app</string>
     <key>CFBundlePackageType</key>
