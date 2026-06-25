@@ -35,9 +35,9 @@ and block background colors.
 
 ## Status
 
-Early. APIs and on-disk conventions may still change.
+Early but very useable. APIs and on-disk conventions may still change.
 
-## Your files
+## Graph layout
 
 A graph is a directory. Everseq lays out and maintains:
 
