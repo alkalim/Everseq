@@ -1,0 +1,46 @@
+name: Build app
+
+# Build a double-clickable Everseq.app on GitHub's macOS runners.
+# - Runs manually (Actions tab → "Run workflow"), uploading the .app as an artifact.
+# - On a version tag (e.g. v0.1.0), also attaches the .app to a GitHub Release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write          # needed to attach the build to a Release
+
+jobs:
+  build:
+    runs-on: macos-15      # Apple Silicon runner; ships Xcode 16 / Swift 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versions (diagnostics)
+        run: swift --version && xcodebuild -version
+
+      - name: Build Everseq.app (release)
+        run: ./scripts/build-app.sh release
+        # The bundle is ad-hoc signed (no Developer ID on CI → not notarized).
+        # On a runner without Xcode 26 the themable icon won't compile and
+        # build-app.sh falls back to the static .icns — the build still succeeds.
+
+      - name: Zip the bundle
+        # `ditto` preserves the bundle structure / symlinks / signature.
+        run: ditto -c -k --keepParent build/Everseq.app Everseq.app.zip
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Everseq-app
+          path: Everseq.app.zip
+
+      - name: Attach to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" Everseq.app.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" Everseq.app.zip --clobber
