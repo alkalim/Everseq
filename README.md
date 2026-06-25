@@ -65,6 +65,20 @@ EVERSEQ_GRAPH=/path/to/graph swift run Everseq # run against a graph folder
 `EVERSEQ_GRAPH` defaults to `~/Documents/Everseq`; the folder is created and seeded
 on first launch. To produce a double-clickable `.app`, see `scripts/build-app.sh`.
 
+## Running a downloaded build
+
+This app is not notarized, so macOS Gatekeeper blocks a *downloaded* copy on first
+launch. To run it, either:
+
+- strip the quarantine flag — `xattr -dr com.apple.quarantine /path/to/Everseq.app`, or
+- open **System Settings → Privacy & Security** and click **Open Anyway**.
+
+On macOS 15 (Sequoia) the old Control-click → Open shortcut no longer bypasses
+Gatekeeper for un-notarized apps; use one of the above.
+
+Building from source avoids this entirely — a locally built `.app` isn't
+quarantined — but needs the Swift toolchain (the Xcode Command Line Tools).
+
 ## Why it exists
 
 A fast, low-footprint, files-stay-yours outliner:
