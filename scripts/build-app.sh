@@ -7,7 +7,11 @@ set -e
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
-VERSION="0.1.0"
+# Version fields, overridable by env (CI sets them from the git tag / run number).
+# Defaults mark an untagged local build: VERSION "dev", BUILD the short commit —
+# so the app reads e.g. "dev (1a2b3c)" locally and "0.2.0 (42)" from a tagged CI build.
+VERSION="${VERSION:-dev}"                                              # CFBundleShortVersionString
+BUILD="${BUILD:-$(git rev-parse --short HEAD 2>/dev/null || echo 0)}"  # CFBundleVersion
 APP="build/Everseq.app"
 BIN=".build/$CONFIG/Everseq"
 
@@ -89,7 +93,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$BUILD</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSApplicationCategoryType</key>

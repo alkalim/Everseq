@@ -17,7 +17,11 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build Everseq.app (release)
-        run: ./scripts/build-app.sh release
+        # On a tag (v0.2.0 → 0.2.0) the version comes from the tag; otherwise "dev".
+        # The build number is the CI run number (monotonic).
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="dev"; fi
+          VERSION="$VERSION" BUILD="$GITHUB_RUN_NUMBER" ./scripts/build-app.sh release
 
       - name: Zip the bundle
         run: ditto -c -k --keepParent build/Everseq.app Everseq.app.zip
