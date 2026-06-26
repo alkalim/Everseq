@@ -267,6 +267,23 @@ import Foundation
         expectEqual(text, "- target block\n  id:: \(blockID.uuidString.lowercased())\n")
     }
 
+    @Test func persistBlockIDFromSearchHitPersistsAndResolves() throws {
+        // The autocomplete flow: `((` search returns an id from the *index*,
+        // where an un-persisted block gets a fresh random id on each parse — so
+        // the id won't match a freshly-loaded page. persistBlockID must still
+        // write `id::` (matching the inserted `((id))`) and resolveBlock find it.
+        let store = try makeGraph(["P": "- a\n- the memorable target\n  - child\n"])
+        let hits = try store.cache.searchBlocks("memorable target")
+        expectNotNil(hits.first)
+        guard let hit = hits.first else { return }
+        try store.persistBlockID(hit.blockID, inPageNamed: hit.pageDisplayName)
+
+        let text = try String(contentsOf: store.fileURL(forPageNamed: "P"), encoding: .utf8)
+        expectTrue(text.contains("id:: \(hit.blockID.uuidString.lowercased())"))
+        let resolved = store.resolveBlock(hit.blockID)
+        expectEqual(resolved?.block.content, "the memorable target")
+    }
+
     @Test func incrementalSyncSkipsUnchangedFiles() throws {
         let store = try makeGraph(["A": "- a\n"])
         // Second sync with same stamps re-touches nothing (no error = pass);

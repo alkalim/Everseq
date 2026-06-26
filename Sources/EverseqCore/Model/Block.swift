@@ -200,6 +200,23 @@ extension Array where Element == Block {
         }
     }
 
+    /// The path to the block at DFS-preorder position `n` — the same order the
+    /// cache assigns its `position` column. Lets a block be relocated after a
+    /// re-parse whose volatile ids no longer match the index.
+    public func path(atPreorderPosition n: Int) -> [Int]? {
+        var remaining = n
+        func walk(_ blocks: [Block], prefix: [Int]) -> [Int]? {
+            for (i, b) in blocks.enumerated() {
+                let p = prefix + [i]
+                if remaining == 0 { return p }
+                remaining -= 1
+                if let hit = walk(b.children, prefix: p) { return hit }
+            }
+            return nil
+        }
+        return walk(self, prefix: [])
+    }
+
     /// All blocks in the forest, depth-first.
     public var flattened: [Block] {
         var out: [Block] = []

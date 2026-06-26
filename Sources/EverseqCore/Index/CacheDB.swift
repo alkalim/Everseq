@@ -592,6 +592,19 @@ public final class CacheDB {
         }
     }
 
+    /// The DFS-preorder position recorded for a block (its `position` column).
+    /// Lets a block be relocated in a freshly-parsed page when its volatile id
+    /// no longer matches the index (SPEC §7.1).
+    public func position(ofBlock id: UUID) throws -> Int? {
+        try dbQueue.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT position FROM blocks WHERE id = ?",
+                arguments: [id.uuidString.lowercased()]
+            )
+        }
+    }
+
     /// How many blocks reference each of the given block ids (SPEC §7.4).
     public func incomingRefCount(forBlockIDs ids: [UUID]) throws -> Int {
         guard !ids.isEmpty else { return 0 }

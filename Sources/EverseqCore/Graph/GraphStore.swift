@@ -205,8 +205,23 @@ public final class GraphStore {
     /// its page. (SPEC §7.1)
     public func persistBlockID(_ blockID: UUID, inPageNamed name: String) throws {
         var doc = page(named: name)
-        guard let path = doc.blocks.path(to: blockID) else { return }
-        doc.blocks.update(at: path) { $0.idPersisted = true }
+        if let path = doc.blocks.path(to: blockID) {
+            doc.blocks.update(at: path) { $0.idPersisted = true }
+        } else if let position = try cache.position(ofBlock: blockID),
+                  let path = doc.blocks.path(atPreorderPosition: position) {
+            // The id handed to us came from the index, where un-persisted blocks
+            // get a fresh random id on every parse — so it won't match this
+            // freshly-loaded page. Relocate the block by its structural position
+            // and force it to adopt the referenced id, so the just-inserted
+            // `((id))` / `{{embed ((id))}}` stays resolvable.
+            doc.blocks.update(at: path) {
+                $0 = Block(id: blockID, content: $0.content, children: $0.children,
+                           collapsed: $0.collapsed, idPersisted: true,
+                           properties: $0.properties, raw: nil)
+            }
+        } else {
+            return
+        }
         updatePage(doc)
         try savePage(named: name)
     }
