@@ -481,7 +481,9 @@ final class OutlineEditorController: NSObject {
         let full = NSRange(location: 0, length: body.length)
         if let linkAll { body.addAttribute(.link, value: linkAll, range: full) }
         body.addAttribute(.embedRegion, value: true, range: full)
-        BlockRenderer.pinLineHeight(body, BlockRenderer.lineHeight(forSource: ""))
+        // Pin per line by its tallest font, so an embedded `## heading` keeps its
+        // full height instead of being clipped to the base line height.
+        BlockRenderer.pinLineHeightPerParagraph(body)
         let ns = body.string as NSString
         let firstBreak = ns.range(of: "\n").location
         addParagraphSpacing(to: body, before: 8,

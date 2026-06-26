@@ -164,6 +164,12 @@ enum BlockRenderer {
     ) {
         let full = NSRange(location: 0, length: string.length)
         string.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
+            // Generated regions (embeds, query results) manage their own per-line
+            // heights via `pinLineHeightPerParagraph` — a blanket base-height pin
+            // here would flatten an embedded `## heading` and clip its top.
+            if string.attribute(.embedRegion, at: range.location, effectiveRange: nil) != nil {
+                return
+            }
             let style = (value as? NSParagraphStyle)
                 .flatMap { $0.mutableCopy() as? NSMutableParagraphStyle }
                 ?? NSMutableParagraphStyle()
@@ -171,6 +177,37 @@ enum BlockRenderer {
             style.maximumLineHeight = lineHeight
             if lineSpacing > 0 { style.lineSpacing = max(style.lineSpacing, lineSpacing) }
             string.addAttribute(.paragraphStyle, value: style, range: range)
+        }
+    }
+
+    /// Pins each line to a fixed height derived from the *tallest* font on that
+    /// line. Unlike a single blanket pin, this keeps a heading line (or any
+    /// larger-font line) at its full height instead of clipping it to the base
+    /// metrics — used for generated regions (embeds, query results) that mix
+    /// heading and body blocks.
+    static func pinLineHeightPerParagraph(_ string: NSMutableAttributedString) {
+        let ns = string.string as NSString
+        var lineStart = 0
+        while lineStart < ns.length {
+            var start = lineStart, end = 0, contentsEnd = 0
+            ns.getLineStart(&start, end: &end, contentsEnd: &contentsEnd,
+                            for: NSRange(location: lineStart, length: 0))
+            let para = NSRange(location: start, length: end - start)
+            var maxSize = baseFontSize
+            string.enumerateAttribute(.font, in: para) { value, _, _ in
+                if let f = value as? NSFont, f.pointSize > maxSize { maxSize = f.pointSize }
+            }
+            let height = (NSLayoutManager()
+                .defaultLineHeight(for: .systemFont(ofSize: maxSize)) * lineHeightScale).rounded()
+            string.enumerateAttribute(.paragraphStyle, in: para) { value, range, _ in
+                let style = (value as? NSParagraphStyle)
+                    .flatMap { $0.mutableCopy() as? NSMutableParagraphStyle }
+                    ?? NSMutableParagraphStyle()
+                style.minimumLineHeight = height
+                style.maximumLineHeight = height
+                string.addAttribute(.paragraphStyle, value: style, range: range)
+            }
+            lineStart = end
         }
     }
 
