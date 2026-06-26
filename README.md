@@ -6,6 +6,8 @@ no account, no lock-in: the app is just a fast index and editor over a folder of
 `.md` files. Close Everseq and your graph is still a readable, greppable, git-able
 directory of Markdown.
 
+![Everseq showing a page with linked references alongside journal and page cards in the right sidebar](docs/screenshot.png)
+
 ## Features
 
 - **Outliner editing** — every block is a node: `Enter` splits, `Tab`/`Shift+Tab`
