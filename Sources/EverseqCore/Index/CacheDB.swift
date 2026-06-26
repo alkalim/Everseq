@@ -191,19 +191,35 @@ public final class CacheDB {
             var position = 0
             func walk(_ blocks: [Block], parent: UUID?, depth: Int) throws {
                 for block in blocks {
-                    let bid = block.id.uuidString.lowercased()
-                    try db.execute(
-                        sql: """
-                            INSERT INTO blocks
-                            (id, page_key, parent_id, position, depth, content, todo, collapsed)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                        arguments: [
-                            bid, key, parent?.uuidString.lowercased(), position,
-                            depth, block.content, block.todoState?.rawValue,
-                            block.collapsed,
-                        ]
-                    )
+                    var blockID = block.id
+                    var bid = blockID.uuidString.lowercased()
+                    func insertBlock(orIgnore: Bool) throws {
+                        try db.execute(
+                            sql: """
+                                INSERT \(orIgnore ? "OR IGNORE " : "")INTO blocks
+                                (id, page_key, parent_id, position, depth, content, todo, collapsed)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                            arguments: [
+                                bid, key, parent?.uuidString.lowercased(), position,
+                                depth, block.content, block.todoState?.rawValue,
+                                block.collapsed,
+                            ]
+                        )
+                    }
+                    try insertBlock(orIgnore: true)
+                    if db.changesCount == 0 {
+                        // Two files carry the same persisted `id::`. A bare INSERT
+                        // would hit the PRIMARY KEY constraint and abort the whole
+                        // sync, so the graph would fail to open. Re-mint a fresh
+                        // index id for this later copy: it stays searchable and
+                        // structurally intact, while a `((shared-id))` ref resolves
+                        // to the first-indexed block. (Caused by copy/pasting a
+                        // block's raw Markdown, duplicating a file, or Logseq import.)
+                        blockID = UUID()
+                        bid = blockID.uuidString.lowercased()
+                        try insertBlock(orIgnore: false)
+                    }
                     position += 1
                     try db.execute(
                         sql: "INSERT INTO blocks_fts (content, block_id, page_key) VALUES (?, ?, ?)",
@@ -234,7 +250,7 @@ public final class CacheDB {
                             arguments: [bid, key, prop.key, prop.value]
                         )
                     }
-                    try walk(block.children, parent: block.id, depth: depth + 1)
+                    try walk(block.children, parent: blockID, depth: depth + 1)
                 }
             }
             try walk(page.blocks, parent: nil, depth: 0)

@@ -47,6 +47,23 @@ import Foundation
         expectEqual(backlinks.first?.pageDisplayName, "Quoter")
     }
 
+    @Test func duplicateBlockIDsDoNotBreakIndexing() throws {
+        // Two files sharing the same persisted id:: (copy/paste, file dup, or a
+        // Logseq import) must not abort the sync — the graph has to open, and
+        // both blocks stay searchable. (`blocks.id` is a PRIMARY KEY; a naive
+        // insert would throw and `GraphStore.init` would fail.)
+        let id = "6f1c9e2a-3b4d-4c5e-8f90-1a2b3c4d5e6f"
+        let store = try makeGraph([
+            "First": "- alpha block\n  id:: \(id)\n",
+            "Second": "- beta block\n  id:: \(id)\n",
+        ])
+        // Both blocks indexed and findable despite the id clash.
+        expectEqual(try store.cache.searchBlocks("alpha block").count, 1)
+        expectEqual(try store.cache.searchBlocks("beta block").count, 1)
+        // The shared id still resolves (to the first-indexed copy).
+        expectNotNil(store.resolveBlock(UUID(uuidString: id)!))
+    }
+
     @Test func selfReferencesExcluded() throws {
         let store = try makeGraph(["Self": "- I link to [[Self]]\n"])
         expectEqual(try store.cache.backlinks(of: "self").count, 0)
