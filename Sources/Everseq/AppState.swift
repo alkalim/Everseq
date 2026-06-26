@@ -33,7 +33,7 @@ final class AppState: ObservableObject {
     // Memoized journal-home day list (see `journalDays()`): rebuilt only when
     // the day *set* changes, not on every content edit.
     private var journalDayCache: [String] = []
-    private var journalDaySignature = -1
+    private var journalDaySignature = ""
     private var journalCacheToday = ""
 
     // Global undo (SPEC §13): snapshots of whole-page states; a multi-page
@@ -269,7 +269,7 @@ final class AppState: ObservableObject {
     /// every keystroke. Also rebuilds when the calendar day rolls over.
     func journalDays() -> [String] {
         let today = JournalDate.today().pageName
-        let signature = (try? store.cache.journalDaySignature()) ?? -1
+        let signature = (try? store.cache.journalDaySignature()) ?? "?"
         if signature != journalDaySignature || today != journalCacheToday {
             journalDaySignature = signature
             journalCacheToday = today

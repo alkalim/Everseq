@@ -333,14 +333,21 @@ public final class CacheDB {
     /// A cheap fingerprint of the *set* of non-empty journal days, so the
     /// journal home can cache its (expensive) day list and only rebuild it when
     /// a day is actually added, deleted, or crosses empty↔non-empty — not on
-    /// every keystroke. A single aggregate, far cheaper than `journalPages()`.
-    public func journalDaySignature() throws -> Int {
+    /// every keystroke. Far cheaper than `journalPages()`.
+    ///
+    /// It identifies *which* days are present, not just how many: a sorted count
+    /// would miss "one day removed, another added in the same sync window" (the
+    /// count is unchanged but the set differs).
+    public func journalDaySignature() throws -> String {
         try dbQueue.read { db in
-            try Int.fetchOne(db, sql: """
-                SELECT COUNT(DISTINCT b.page_key)
-                FROM blocks b JOIN pages p ON p.name_key = b.page_key
-                WHERE p.is_journal = 1 AND p.journal_date IS NOT NULL
-                """) ?? 0
+            try String.fetchOne(db, sql: """
+                SELECT GROUP_CONCAT(page_key) FROM (
+                    SELECT DISTINCT b.page_key AS page_key
+                    FROM blocks b JOIN pages p ON p.name_key = b.page_key
+                    WHERE p.is_journal = 1 AND p.journal_date IS NOT NULL
+                    ORDER BY b.page_key
+                )
+                """) ?? ""
         }
     }
 
