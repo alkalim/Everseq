@@ -37,7 +37,7 @@ and block background colors.
 
 ## Status
 
-Early but very useable. APIs and on-disk conventions may still change.
+Early but very useable. On-disk conventions may still change.
 
 ## Graph layout
 
