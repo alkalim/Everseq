@@ -195,8 +195,16 @@ struct RightSidebar: View {
     // dark mode (`textBackgroundColor` is darker than `windowBackgroundColor`),
     // so we pin explicit greys per appearance.
 
+    // macOS 26's chrome is lighter and flatter than Sequoia's, so the recessed
+    // column and card outline that read correctly on 15 look too heavy there.
+    // Lighten both on 26 only; leave the 15 values (which suit its chrome) be.
+    static let isMacOS26OrLater: Bool = {
+        if #available(macOS 26, *) { return true }
+        return false
+    }()
+
     static let columnColor = Color(nsColor: .dynamic(
-        light: NSColor(white: 0.94, alpha: 1),   // slightly lighter dim grey
+        light: NSColor(white: isMacOS26OrLater ? 0.965 : 0.94, alpha: 1),  // lighter dim grey
         dark: NSColor(white: 0.12, alpha: 1)))    // recessed, the darkest layer
 
     static let cardColor = Color(nsColor: .dynamic(
@@ -204,11 +212,11 @@ struct RightSidebar: View {
         dark: NSColor(white: 0.21, alpha: 1)))     // clearly above the column
 
     static let cardBorder = Color(nsColor: .dynamic(
-        light: NSColor.separatorColor.withAlphaComponent(0.25),  // a whisper, not an outline
+        light: NSColor.separatorColor.withAlphaComponent(isMacOS26OrLater ? 0.12 : 0.25),
         dark: NSColor(white: 1, alpha: 0.14)))     // a visible rim in the dark
 }
 
-private extension NSColor {
+extension NSColor {
     /// A two-way appearance-adaptive color.
     static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { appearance in

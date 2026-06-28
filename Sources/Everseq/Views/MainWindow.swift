@@ -34,6 +34,14 @@ struct MainWindow: View {
                             Divider()
                         }
                         mainContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // The document area needs its own opaque surface: the
+                            // editor's table/scroll views are clear, so otherwise
+                            // it shows the window's grey (notably heavier on macOS
+                            // 15 than 26). White in light mode; window grey in dark
+                            // mode keeps the existing dark look.
+                            .background(Color(nsColor: .dynamic(
+                                light: .textBackgroundColor, dark: .windowBackgroundColor)))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if !nav.rightPanes.isEmpty {

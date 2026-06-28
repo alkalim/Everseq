@@ -35,6 +35,37 @@ directory of Markdown.
 Some smaller touches: favourites & recents, content zoom, adjustable line spacing,
 and block background colors.
 
+## Why it exists
+
+A fast, low-footprint, files-stay-yours outliner:
+
+- **Your files, forever** — Markdown is the source of truth and the app is
+  disposable. The graph stays readable, greppable, git-friendly, and byte-stable,
+  so editing never churns your files.
+- **Scales without bloating** — the whole graph is never held in RAM; pages load
+  on demand, so memory and startup stay flat as the graph grows.
+- **Fast everything** — a rebuildable SQLite index (`.everseq/cache.db`) backs
+  search, backlinks, tags, and queries, keeping navigation cheap on large graphs.
+- **Native, not a browser** — AppKit/SwiftUI, no Electron: small footprint, quick
+  launch, and platform-native text editing and scrolling.
+
+## How it compares
+
+|                         | Obsidian        | Logseq       | Roam Research   | Workflowy      | Craft        | Everseq      |
+| ----------------------- | --------------- | ------------ | --------------- | -------------- | ------------ | ------------ |
+| Open source             | ✗               | ✓ AGPL-3.0   | ✗               | ✗              | ✗            | ✓ AGPL-3.0   |
+| Native (no Electron)    | ✗ Electron      | ✗ Electron   | ✗ web/Electron  | ✗ web/Electron | ✓            | ✓            |
+| Local-first plain files | ✓ Markdown      | ✓ Markdown   | ✗ cloud         | ✗ cloud        | ✗ own format | ✓ Markdown   |
+| Outliner (block tree)   | ✗ documents     | ✓            | ✓               | ✓              | ✗ documents  | ✓            |
+| Block references        | ✓               | ✓            | ✓               | ✓              | ✓            | ✓            |
+| Embeds / transclusion   | ✓               | ✓            | ✓               | ✓ mirrors      | ✗            | ✓            |
+| Queries                 | Dataview plugin | ✓            | ✓               | saved searches | ✗            | ✓            |
+
+The closest neighbour is **Logseq** — same outliner model, open source, block
+references, embeds, and queries — but Electron. Everseq trades Logseq's
+cross-platform reach for a single-platform native app: smaller footprint, faster
+launch, and platform-native text editing and scrolling.
+
 ## Status
 
 Early but very useable. On-disk conventions may still change.
@@ -80,17 +111,3 @@ Gatekeeper for un-notarized apps; use one of the above.
 
 Building from source avoids this entirely — a locally built `.app` isn't
 quarantined — but needs the Swift toolchain (the Xcode Command Line Tools).
-
-## Why it exists
-
-A fast, low-footprint, files-stay-yours outliner:
-
-- **Your files, forever** — Markdown is the source of truth and the app is
-  disposable. The graph stays readable, greppable, git-friendly, and byte-stable,
-  so editing never churns your files.
-- **Scales without bloating** — the whole graph is never held in RAM; pages load
-  on demand, so memory and startup stay flat as the graph grows.
-- **Fast everything** — a rebuildable SQLite index (`.everseq/cache.db`) backs
-  search, backlinks, tags, and queries, keeping navigation cheap on large graphs.
-- **Native, not a browser** — AppKit/SwiftUI, no Electron: small footprint, quick
-  launch, and platform-native text editing and scrolling.
