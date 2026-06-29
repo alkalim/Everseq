@@ -21,15 +21,17 @@ jobs:
         # The build number is the CI run number (monotonic).
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="dev"; fi
+          # Name the download by version, OS, and CPU — e.g. Everseq-0.1.2-macos-arm64.zip.
+          echo "ZIP=Everseq-${VERSION}-macos-$(uname -m).zip" >> "$GITHUB_ENV"
           VERSION="$VERSION" BUILD="$GITHUB_RUN_NUMBER" ./scripts/build-app.sh release
 
       - name: Zip the bundle
-        run: ditto -c -k --keepParent build/Everseq.app Everseq.app.zip
+        run: ditto -c -k --keepParent build/Everseq.app "$ZIP"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          path: Everseq.app.zip
+          path: ${{ env.ZIP }}
           archive: false     # upload as-is, so the download isn't a zip-in-a-zip
 
       - name: Attach to Release (tags only)
@@ -37,6 +39,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" Everseq.app.zip \
+          gh release create "$GITHUB_REF_NAME" "$ZIP" \
             --title "$GITHUB_REF_NAME" --generate-notes \
-          || gh release upload "$GITHUB_REF_NAME" Everseq.app.zip --clobber
+          || gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
