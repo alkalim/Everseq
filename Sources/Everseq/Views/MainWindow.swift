@@ -60,33 +60,14 @@ struct MainWindow: View {
         // Native-style Back/Forward in the toolbar's leading navigation area
         // (like Finder/Safari), mirroring the ⌘[ / ⌘] commands.
         .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                // Click = one step; press-and-hold = history menu (Finder-style).
-                Menu {
-                    ForEach(Array(backTitles.prefix(15).enumerated()), id: \.offset) { i, title in
-                        Button(title) { nav.goBack(steps: i + 1) }
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                } primaryAction: {
-                    nav.goBack()
-                }
-                .menuIndicator(.hidden)
-                .disabled(backTitles.isEmpty)
-                .help("Back (⌘[) — hold for history")
-
-                Menu {
-                    ForEach(Array(forwardTitles.prefix(15).enumerated()), id: \.offset) { i, title in
-                        Button(title) { nav.goForward(steps: i + 1) }
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                } primaryAction: {
-                    nav.goForward()
-                }
-                .menuIndicator(.hidden)
-                .disabled(forwardTitles.isEmpty)
-                .help("Forward (⌘]) — hold for history")
+            ToolbarItem(placement: .navigation) {
+                // The native control Finder uses: a two-segment NSSegmentedControl.
+                // Click steps once; press-and-hold shows history via a per-segment
+                // menu (AppKit's built-in behavior). Matches the system look exactly.
+                NavSegmentedControl(
+                    backTitles: backTitles, forwardTitles: forwardTitles,
+                    goBack: { nav.goBack(steps: $0) },
+                    goForward: { nav.goForward(steps: $0) })
             }
         }
         .sheet(isPresented: $nav.searchPresented) {
@@ -160,6 +141,76 @@ struct MainWindow: View {
             TagViewScreen(tag: tag)
         case .allPages:
             AllPagesView()
+        }
+    }
+}
+
+/// The native Back/Forward control (as in Finder): a two-segment
+/// `NSSegmentedControl`. A click steps once in that direction; press-and-hold
+/// opens the history as a per-segment menu (AppKit shows it automatically). Each
+/// segment is disabled when there's no history that way. `goBack`/`goForward`
+/// take a step count (1 for a click, N for the Nth history entry).
+private struct NavSegmentedControl: NSViewRepresentable {
+    let backTitles: [String]
+    let forwardTitles: [String]
+    let goBack: (Int) -> Void
+    let goForward: (Int) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl()
+        control.segmentCount = 2
+        control.trackingMode = .momentary
+        control.setImage(NSImage(systemSymbolName: "chevron.backward",
+                                 accessibilityDescription: "Back"), forSegment: 0)
+        control.setImage(NSImage(systemSymbolName: "chevron.forward",
+                                 accessibilityDescription: "Forward"), forSegment: 1)
+        control.setShowsMenuIndicator(false, forSegment: 0)
+        control.setShowsMenuIndicator(false, forSegment: 1)
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.clicked(_:))
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        control.setEnabled(!backTitles.isEmpty, forSegment: 0)
+        control.setEnabled(!forwardTitles.isEmpty, forSegment: 1)
+        // Per-segment menu → press-and-hold shows history (Finder behavior).
+        control.setMenu(context.coordinator.historyMenu(backTitles, back: true), forSegment: 0)
+        control.setMenu(context.coordinator.historyMenu(forwardTitles, back: false), forSegment: 1)
+    }
+
+    final class Coordinator: NSObject {
+        var parent: NavSegmentedControl
+        init(_ parent: NavSegmentedControl) { self.parent = parent }
+
+        @objc func clicked(_ sender: NSSegmentedControl) {
+            switch sender.selectedSegment {
+            case 0: parent.goBack(1)
+            case 1: parent.goForward(1)
+            default: break
+            }
+        }
+
+        func historyMenu(_ titles: [String], back: Bool) -> NSMenu? {
+            guard !titles.isEmpty else { return nil }
+            let menu = NSMenu()
+            for (i, title) in titles.prefix(15).enumerated() {
+                let item = NSMenuItem(title: title,
+                                      action: #selector(pickHistory(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = i + 1                 // steps
+                item.representedObject = back
+                menu.addItem(item)
+            }
+            return menu
+        }
+
+        @objc func pickHistory(_ sender: NSMenuItem) {
+            let back = (sender.representedObject as? Bool) ?? true
+            if back { parent.goBack(sender.tag) } else { parent.goForward(sender.tag) }
         }
     }
 }
