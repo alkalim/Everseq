@@ -451,10 +451,14 @@ final class OutlineEditorController: NSObject {
                 // Indent + a real 6px bullet (a drawn circle, not a glyph) so it
                 // matches the outline's bullets exactly; the cell background
                 // marks the region as embedded.
-                body.append(NSAttributedString(string: String(repeating: "    ", count: depth),
+                let indent = String(repeating: "    ", count: depth)
+                let start = body.length
+                body.append(NSAttributedString(string: indent,
                                                attributes: [.font: BlockRenderer.baseFont()]))
                 body.append(Self.embedBullet())
                 body.append(BlockRenderer.render(content: block.content, context: inner))
+                applyHangingIndent(body, range: NSRange(location: start, length: body.length - start),
+                                   hang: bulletHangWidth(indent: indent))
                 if !block.collapsed { walk(block.children, depth: depth + 1) }
             }
         }
@@ -517,6 +521,27 @@ final class OutlineEditorController: NSObject {
         }
     }
 
+    /// Width of a query/embed row's leading indent + bullet, so wrapped lines can
+    /// hang-indent under the content rather than dropping to the region's edge.
+    private func bulletHangWidth(indent: String) -> CGFloat {
+        let s = NSMutableAttributedString(string: indent, attributes: [.font: BlockRenderer.baseFont()])
+        s.append(Self.embedBullet())
+        return ceil(s.size().width)
+    }
+
+    /// Hangs wrapped lines under the content (after the bullet) by setting
+    /// `headIndent` to the bullet-prefix width. `finishRegion` later adds the
+    /// region's left padding to both indents, keeping the offset.
+    private func applyHangingIndent(_ text: NSMutableAttributedString, range: NSRange, hang: CGFloat) {
+        guard range.length > 0 else { return }
+        let base = text.attribute(.paragraphStyle, at: range.location + range.length - 1,
+                                  effectiveRange: nil) as? NSParagraphStyle
+        let style = (base?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+        style.firstLineHeadIndent = 0
+        style.headIndent = hang
+        text.addAttribute(.paragraphStyle, value: style, range: range)
+    }
+
     /// Read-only render of a `{{query …}}` expression's results (§17): matching
     /// blocks grouped by page, capped, click-to-navigate. The host block (set in
     /// `renderBlock`) is excluded so a query never lists itself.
@@ -568,6 +593,8 @@ final class OutlineEditorController: NSObject {
             row.addAttribute(.link,
                              value: EverseqURL.block(hit.blockID, onPage: hit.pageDisplayName),
                              range: NSRange(location: 0, length: row.length))
+            applyHangingIndent(row, range: NSRange(location: 0, length: row.length),
+                               hang: bulletHangWidth(indent: "    "))
             line(row)
         }
         if result.total > result.hits.count {
