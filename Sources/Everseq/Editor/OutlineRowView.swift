@@ -455,11 +455,23 @@ final class RenderedTextView: NSTextView {
         guard let storage = textStorage, storage.length > 0 else { return nil }
         // A click in the empty space past a line's text isn't a link (it falls
         // through to focusing the block); only a hit on actual glyphs counts.
+        // Check the specific *line* fragment, not the whole layout fragment: a
+        // wrapped link is one multi-line fragment whose width is the long first
+        // line's, so the short trailing line's empty gap would otherwise map to
+        // the link.
         let container = NSPoint(x: point.x - textContainerInset.width,
                                 y: point.y - textContainerInset.height)
-        if let lm = textLayoutManager, let frag = lm.textLayoutFragment(for: container),
-           container.x > frag.layoutFragmentFrame.maxX {
-            return nil
+        if let lm = textLayoutManager, let frag = lm.textLayoutFragment(for: container) {
+            let origin = frag.layoutFragmentFrame.origin
+            var pastLineText = container.x > frag.layoutFragmentFrame.maxX
+            for line in frag.textLineFragments {
+                let bounds = line.typographicBounds.offsetBy(dx: origin.x, dy: origin.y)
+                if container.y >= bounds.minY, container.y < bounds.maxY {
+                    pastLineText = container.x > bounds.maxX
+                    break
+                }
+            }
+            if pastLineText { return nil }
         }
         let index = min(characterIndexForInsertion(at: point), storage.length - 1)
         guard index >= 0 else { return nil }
