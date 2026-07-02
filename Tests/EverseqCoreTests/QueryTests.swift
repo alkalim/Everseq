@@ -166,4 +166,25 @@ import Foundation
         expectEqual(r.hits.count, 1)
         expectEqual(r.total, 2) // total is the full count, not the capped page
     }
+
+    @Test func journalResultsAreNewestFirst() throws {
+        // Journal days sort newest→oldest; non-journal pages (no date) come after.
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("everseq-query-\(UUID().uuidString)")
+        let fm = FileManager.default
+        try fm.createDirectory(at: root.appendingPathComponent("pages"), withIntermediateDirectories: true)
+        let journals = root.appendingPathComponent("journals")
+        try fm.createDirectory(at: journals, withIntermediateDirectories: true)
+        for day in ["2026-04-05", "2026-04-07", "2026-04-06"] {   // written out of order
+            try Data("- a note #urgent\n".utf8)
+                .write(to: journals.appendingPathComponent(PageName.fileName(for: day)))
+        }
+        try Data("- plain page task #urgent\n".utf8)
+            .write(to: root.appendingPathComponent("pages/\(PageName.fileName(for: "Zeta"))"))
+        let store = try GraphStore(root: root)
+
+        let r = try run(store, "#urgent")
+        expectEqual(r.hits.map(\.pageDisplayName),
+                    ["2026-04-07", "2026-04-06", "2026-04-05", "Zeta"])
+    }
 }

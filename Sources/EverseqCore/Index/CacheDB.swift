@@ -539,7 +539,10 @@ public final class CacheDB {
                 FROM blocks b
                 JOIN pages p ON p.name_key = b.page_key
                 WHERE \(whereSQL)
-                ORDER BY p.display_name, b.position, b.content
+                -- Journal days newest-first (journal_date DESC puts non-journal
+                -- pages, with NULL dates, last), then other pages alphabetically.
+                ORDER BY p.journal_date DESC, p.display_name COLLATE NOCASE,
+                         b.position, b.content
                 LIMIT ?
                 """, arguments: StatementArguments(whereArgs + [limit]))
             let hits = try rows.compactMap { row -> BacklinkHit? in
