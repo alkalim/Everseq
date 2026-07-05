@@ -2,6 +2,21 @@
 
 Notable changes per release, newest first. Dates are release dates.
 
+## v0.2.2 (2026-07-06)
+
+Editor and window refinements.
+
+**Added**
+- Leading page content before the first bullet (e.g. a bare `# Heading`) now renders read-only above the outline instead of being hidden.
+
+**Improved**
+- The main view and right sidebar resize proportionally, and the sidebar width is remembered across restarts.
+- Windows reopen at their saved size and position without a brief flash on launch.
+- More tips on the welcome page for new graphs.
+
+**Fixed**
+- The link/reference autocomplete popup no longer stays stuck open after navigating away from the page.
+
 ## v0.2.1 (2026-07-02)
 
 Backslash escaping, editor and query refinements.
