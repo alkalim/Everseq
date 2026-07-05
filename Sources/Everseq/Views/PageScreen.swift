@@ -25,6 +25,14 @@ struct PageScreen: View {
             if zoom != nil {
                 BreadcrumbBar(pageName: pageName, zoom: zoom)
             }
+            // Leading content before the first bullet (e.g. a bare `# Heading`)
+            // lives in the page preamble: preserved byte-stably but not a block,
+            // so it can't be edited here. Render it read-only so it isn't hidden.
+            if zoom == nil, let preamble = preambleAttributed(doc.preamble) {
+                Text(AttributedString(preamble))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             OutlineEditorView(pageName: pageName, zoom: zoom)
             if !inPane {
                 Divider().padding(.vertical, 8)
@@ -44,6 +52,24 @@ struct PageScreen: View {
             }
         }
         .sheet(isPresented: $renameSheetShown) { renameSheet }
+    }
+
+    /// Renders the page preamble (lines before the first bullet) as read-only
+    /// markdown, one rendered line per source line so a leading `# Heading`
+    /// shows as a heading. Nil when the preamble is empty.
+    private func preambleAttributed(_ preamble: String) -> NSAttributedString? {
+        let lines = preamble.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !lines.isEmpty else { return nil }
+        let ctx = BlockRenderer.Context(
+            resolveBlockRef: { app.store.resolveBlock($0)?.block.content },
+            assetsDir: app.store.assetsDir)
+        let out = NSMutableAttributedString()
+        for line in lines {
+            if out.length > 0 { out.append(NSAttributedString(string: "\n")) }
+            out.append(BlockRenderer.render(content: line, context: ctx))
+        }
+        return out
     }
 
     private func header(_ doc: PageDocument) -> some View {

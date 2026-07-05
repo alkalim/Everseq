@@ -130,6 +130,7 @@ Pages are serialized as Markdown bullet lists; indentation (2 spaces) encodes th
 Rules:
 
 - Each bullet (`- `) is one block. Continuation lines indented to the bullet's content column belong to the same block (multi-line blocks: code fences, quotes).
+- **Preamble** — any lines *before the first bullet* (e.g. a bare `# Heading` with no `- `) are not blocks. They are preserved verbatim for byte-stable round-trip and rendered **read-only** above the outline, so leading content isn't hidden but also isn't editable in place (edit the file to change it). This differs from Logseq, which re-serializes the whole file and promotes such content to an editable, still-un-bulleted first block; Everseq keeps it as read-only preamble to honor the per-block round-trip guarantee. (A future option: parse it as a raw-backed first block that stays dash-less until edited.)
 - `id:: <uuid>` is written as a property line under a block **only when the block is referenced** by at least one block reference. Unreferenced blocks carry no persisted id (their UUIDs live only in the cache), keeping files clean. Once written, an `id::` is never removed automatically.
 - `collapsed:: true` is persisted the same way, only when true.
 - Page properties (`key:: value` lines in the first block) are supported minimally: parsed, displayed, and round-tripped, but no semantics are attached except `title::` (overrides display name).
