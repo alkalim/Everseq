@@ -60,6 +60,11 @@ private struct OutlineEditorRepresentable: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: OutlineTableView, coordinator: Coordinator) {
         if let controller = coordinator.controller {
+            // Navigating away (this representable is replaced) must close any
+            // open autocomplete: its panel is a child window retained by the
+            // main window, so without this it lingers until the window closes.
+            // `endEditing` also flushes the in-progress edit session.
+            controller.endEditing()
             coordinator.find?.unregister(controller)
         }
     }
