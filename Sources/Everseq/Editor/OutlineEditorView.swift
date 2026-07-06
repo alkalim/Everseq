@@ -164,6 +164,10 @@ final class OutlineEditorController: NSObject {
     // Node selection (SPEC §13): block-level multi-select when not editing.
     private var selectedRows: Set<Int> = []
     private var selectionAnchor: Int?
+    /// The one controller that currently holds a node-selection. Several outline
+    /// editors can be on screen at once (journal home, right-sidebar panes), but
+    /// a selection is global: establishing one here clears any other's.
+    @MainActor private static weak var selectionOwner: OutlineEditorController?
 
     // In-page find (Cmd+F) — this outline's slice, driven by FindCoordinator.
     private var findActive = false
@@ -703,7 +707,18 @@ final class OutlineEditorController: NSObject {
     // MARK: - Focus and the shared editor
 
     func focusBlock(_ id: UUID, selection: NSRange?) {
-        if hasSelection { selectedRows = []; selectionAnchor = nil } // editing exits node selection
+        // Editing exits node selection everywhere. Clear another editor's
+        // selection (journal home / panes) if it owns one…
+        if let owner = Self.selectionOwner, owner !== self { owner.clearSelection() }
+        Self.selectionOwner = nil
+        // …and clear our own, redrawing the stale rows so their dark-blue
+        // highlight doesn't linger next to the focused block.
+        if hasSelection {
+            let stale = selectedRows
+            selectedRows = []
+            selectionAnchor = nil
+            stale.forEach(reloadRow)
+        }
         flushEditSessionUndo() // close the previous block's typing into one undo step
         let previous = focusedBlockID
         attachEditor(to: id, selection: selection, startSession: true)
@@ -759,6 +774,13 @@ final class OutlineEditorController: NSObject {
     private var hasSelection: Bool { !selectedRows.isEmpty }
 
     private func setSelection(_ rows: Set<Int>, anchor: Int?) {
+        if rows.isEmpty {
+            if Self.selectionOwner === self { Self.selectionOwner = nil }
+        } else {
+            // Establishing a selection here clears any other editor's.
+            if let owner = Self.selectionOwner, owner !== self { owner.clearSelection() }
+            Self.selectionOwner = self
+        }
         selectedRows = rows
         selectionAnchor = anchor
         tableView.reloadData()
@@ -838,9 +860,11 @@ final class OutlineEditorController: NSObject {
         guard let index = rows.firstIndex(where: { $0.block.id == id }) else { return }
         if focusedBlockID != nil { endEditing() }
         if toggle {
-            if selectedRows.contains(index) { selectedRows.remove(index) }
-            else { selectedRows.insert(index); selectionAnchor = index }
-            tableView.reloadData()
+            var next = selectedRows
+            let anchor: Int?
+            if next.contains(index) { next.remove(index); anchor = selectionAnchor }
+            else { next.insert(index); anchor = index }
+            setSelection(next, anchor: anchor)
         } else if extend, let anchor = selectionAnchor {
             setSelection(Set(min(anchor, index)...max(anchor, index)), anchor: anchor)
         } else {
