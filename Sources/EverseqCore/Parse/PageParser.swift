@@ -229,7 +229,7 @@ public enum PageParser {
 
     /// `key:: value` (or `key::` with empty value) — key starts with a letter,
     /// then letters/digits/`-`/`_`/`.`.
-    static func matchProperty(_ line: String) -> BlockProperty? {
+    public static func matchProperty(_ line: String) -> BlockProperty? {
         let l = chomp(line)
         let sep: Range<String.Index>
         if let r = l.range(of: ":: ") {

@@ -64,10 +64,26 @@ struct PageScreen: View {
         let ctx = BlockRenderer.Context(
             resolveBlockRef: { app.store.resolveBlock($0)?.block.content },
             assetsDir: app.store.assetsDir)
+        // A `key:: value` line is a page property: render it dimmed as `key: value`
+        // like block properties (§3.2), not as plain body text. Other preamble
+        // lines (e.g. a leading `# Heading`) render as markdown.
+        let keyAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: BlockRenderer.baseFontSize, weight: .medium),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+        ]
+        let valueAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: BlockRenderer.baseFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
         let out = NSMutableAttributedString()
         for line in lines {
             if out.length > 0 { out.append(NSAttributedString(string: "\n")) }
-            out.append(BlockRenderer.render(content: line, context: ctx))
+            if let prop = PageParser.matchProperty(line) {
+                out.append(NSAttributedString(string: "\(prop.key): ", attributes: keyAttrs))
+                out.append(NSAttributedString(string: prop.value, attributes: valueAttrs))
+            } else {
+                out.append(BlockRenderer.render(content: line, context: ctx))
+            }
         }
         return out
     }
