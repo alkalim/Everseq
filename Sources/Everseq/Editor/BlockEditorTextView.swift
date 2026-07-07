@@ -50,7 +50,7 @@ final class BlockEditorTextView: NSTextView {
         isRichText = false
         allowsUndo = false // global undo is custom (SPEC §13), not per-text-view
         font = Self.editorFont
-        typingAttributes = [.font: Self.editorFont, .foregroundColor: NSColor.textColor]
+        typingAttributes = [.font: Self.editorFont, .foregroundColor: BlockRenderer.bodyColor]
         drawsBackground = true
         backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.06)
         insertionPointColor = .controlAccentColor
@@ -434,7 +434,7 @@ final class BlockEditorTextView: NSTextView {
         paragraph.lineSpacing = BlockRenderer.lineSpacing
         storage.beginEditing()
         storage.setAttributes(
-            [.font: base, .foregroundColor: NSColor.textColor, .paragraphStyle: paragraph],
+            [.font: base, .foregroundColor: BlockRenderer.bodyColor, .paragraphStyle: paragraph],
             range: full
         )
         for rule in Self.rules {
@@ -457,7 +457,7 @@ final class BlockEditorTextView: NSTextView {
         BlockRenderer.shrinkEmoji(storage, scale: BlockRenderer.emojiScale)
         storage.endEditing()
         typingAttributes = [
-            .font: base, .foregroundColor: NSColor.textColor, .paragraphStyle: paragraph,
+            .font: base, .foregroundColor: BlockRenderer.bodyColor, .paragraphStyle: paragraph,
         ]
     }
 }

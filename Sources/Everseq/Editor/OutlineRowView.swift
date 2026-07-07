@@ -24,7 +24,9 @@ final class OutlineRowCell: NSTableCellView {
 
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("OutlineRowCell")
     static let indentPerDepth: CGFloat = 22
-    static let gutterWidth: CGFloat = 34
+    /// Space before a block's text, holding the fold chevron and bullet. Scales
+    /// with zoom so the bullet-to-text gap grows with the text size.
+    static var gutterWidth: CGFloat { (34 * BlockRenderer.zoom).rounded() }
     static let trailingPad: CGFloat = 6
     /// Row top/bottom padding — the gap *between* blocks. Scales with the
     /// text-density control (View menu); 2 at 100%. The swing around that default
@@ -142,7 +144,7 @@ final class OutlineRowCell: NSTableCellView {
         updateFoldVisibility()
         let symbol = collapsed ? "chevron.right" : "chevron.down"
         foldButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 8, weight: .bold))
+            .withSymbolConfiguration(.init(pointSize: 8 * BlockRenderer.zoom, weight: .bold))
         foldButton.contentTintColor = .tertiaryLabelColor
         bullet.isCollapsed = collapsed
         // An empty leaf block hides its bullet (nothing to zoom/fold/reference);
@@ -166,6 +168,10 @@ final class OutlineRowCell: NSTableCellView {
         // transcluded line fragments, not the whole cell).
         embedBackground.isHidden = true
         renderedView.textStorage?.setAttributedString(attributed)
+        // TextKit 2 repaints the glyphs on its own layout path without calling
+        // the view's draw(), so the inline-code pills (drawn there) would keep
+        // stale pixels — or never appear — after an in-place content update.
+        renderedView.needsDisplay = true
         needsLayout = true
     }
 
@@ -268,10 +274,18 @@ final class OutlineRowCell: NSTableCellView {
         let indent = CGFloat(depth) * Self.indentPerDepth
         // Center the bullet/fold on the first line's vertical midpoint.
         let firstLineCenter = Self.verticalPadding + Self.contentInsetV + firstLineHeight / 2
+        // Fold chevron and bullet sit in the gutter with offsets scaled by zoom,
+        // so the whole gutter — and the bullet-to-text gap — grows with the text.
+        let z = BlockRenderer.zoom
+        let foldSize = (14 * z).rounded()
         foldButton.frame = NSRect(
-            x: indent, y: firstLineCenter - 7, width: 14, height: 14)
+            x: indent + (7 * z).rounded() - foldSize / 2, y: firstLineCenter - foldSize / 2,
+            width: foldSize, height: foldSize)
+        let bulletBox = BulletView.dotDiameter() + 8
         bullet.frame = NSRect(
-            x: indent + 16, y: firstLineCenter - 6, width: 12, height: 12)
+            x: indent + (22 * z).rounded() - bulletBox / 2, y: firstLineCenter - bulletBox / 2,
+            width: bulletBox, height: bulletBox)
+        bullet.needsDisplay = true
         let contentX = indent + Self.gutterWidth
         container.frame = NSRect(
             x: contentX,
@@ -426,6 +440,53 @@ final class RenderedTextView: NSTextView {
         view.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         view.delegate = view
         return view
+    }
+
+    // MARK: Inline-code pill
+
+    override func draw(_ dirtyRect: NSRect) {
+        drawInlineCodePills()
+        super.draw(dirtyRect)
+    }
+
+    /// A padded, rounded box behind each inline `code` run (keyed on
+    /// `BlockRenderer.inlineCodeKey`) — TextKit 2's `.backgroundColor` is a
+    /// tight square rect with no breathing room, so we draw our own.
+    private func drawInlineCodePills() {
+        guard let tlm = textLayoutManager,
+              let tcs = textContentStorage,
+              let storage = textStorage, storage.length > 0 else { return }
+        // Collect the code ranges first so rows without code bail out cheaply.
+        var ranges: [NSRange] = []
+        storage.enumerateAttribute(
+            BlockRenderer.inlineCodeKey,
+            in: NSRange(location: 0, length: storage.length)
+        ) { value, range, _ in
+            if value != nil, range.length > 0 { ranges.append(range) }
+        }
+        guard !ranges.isEmpty else { return }
+        // Segment frames are only valid for laid-out text. Without this, the
+        // first draw of a row can miss pills entirely, and a reused row can
+        // place them at the previous content's offsets.
+        tlm.ensureLayout(for: tlm.documentRange)
+        let origin = textContainerOrigin
+        NSColor.secondarySystemFill.setFill()
+        for range in ranges {
+            guard let start = tcs.location(tcs.documentRange.location, offsetBy: range.location),
+                  let end = tcs.location(start, offsetBy: range.length),
+                  let textRange = NSTextRange(location: start, end: end) else { continue }
+            // `.highlight` segments are the box geometry TextKit 2 itself uses
+            // for selection/background drawing: full line height, uniform across
+            // mixed fonts on the line.
+            tlm.enumerateTextSegments(in: textRange, type: .highlight, options: []) { _, frame, _, _ in
+                guard frame.width > 0 else { return true }
+                // Horizontal padding is real (thin spaces inside the run), so the
+                // pill hugs the segment; -1 just softens the rounded edge.
+                let pill = frame.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -1, dy: 0)
+                NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+                return true
+            }
+        }
     }
 
     // MARK: Clicks
@@ -655,13 +716,29 @@ final class BulletView: NSView {
     var onClick: () -> Void = {}
     var onContextMenu: (NSEvent) -> Void = { _ in }
 
+    /// Dot diameter, scaled with the text size (zoom) so the bullet doesn't look
+    /// tiny next to large text. ~5px at the default size.
+    static func dotDiameter() -> CGFloat {
+        max(4, (BlockRenderer.baseFontSize * 0.36).rounded())
+    }
+
     override func draw(_ dirtyRect: NSRect) {
+        let d = Self.dotDiameter()
         if isCollapsed {
-            NSColor.secondaryLabelColor.withAlphaComponent(0.25).setFill()
-            NSBezierPath(ovalIn: bounds.insetBy(dx: 0.5, dy: 0.5)).fill()
+            let halo = d + 6
+            NSColor.secondaryLabelColor.withAlphaComponent(0.22).setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: bounds.midX - halo / 2, y: bounds.midY - halo / 2,
+                width: halo, height: halo)).fill()
         }
-        let dot = NSRect(x: bounds.midX - 3, y: bounds.midY - 3, width: 6, height: 6)
-        NSColor.secondaryLabelColor.withAlphaComponent(isCollapsed ? 0.9 : 0.6).setFill()
+        // A small, light-gray dot: structure, not content, so it stays out of the
+        // way (matching the lighter Logseq bullet). Collapsed blocks read darker.
+        let dot = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        if isCollapsed {
+            NSColor.secondaryLabelColor.withAlphaComponent(0.9).setFill()
+        } else {
+            NSColor.tertiaryLabelColor.setFill()
+        }
         NSBezierPath(ovalIn: dot).fill()
     }
 

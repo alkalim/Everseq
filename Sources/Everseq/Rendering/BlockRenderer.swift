@@ -103,6 +103,29 @@ enum BlockRenderer {
     /// On-screen base text size (base × zoom). Everything sizes off this.
     static var baseFontSize: CGFloat { baseSize * zoom }
 
+    /// Marks an inline `code` run so `RenderedTextView` can draw a padded,
+    /// rounded pill behind it (an attributed `.backgroundColor` is a tight,
+    /// square rect with no breathing room).
+    static let inlineCodeKey = NSAttributedString.Key("everseqInlineCode")
+
+    /// Inline-code glyph color: a dark grey (not pure body-text black) so it
+    /// reads as distinct on the code pill. Adapts to light/dark.
+    static let codeTextColor: NSColor = NSColor(name: "everseqCode") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 0.78, alpha: 1)
+            : NSColor(white: 0.30, alpha: 1)
+    }
+
+    /// Body-text color: a hair softer than the system `textColor` (pure black /
+    /// pure white) so long outlines read less harshly, closer to the Logseq/Bear
+    /// feel. Used by both the rendered rows and the focused editor so text
+    /// doesn't shift on focus. Adapts to light/dark automatically.
+    static let bodyColor: NSColor = NSColor(name: "everseqBody") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 0.88, alpha: 1)   // soft off-white on dark
+            : NSColor(white: 0.17, alpha: 1)   // ~#2b2b2b on light
+    }
+
     static let minDensity: CGFloat = 0.5
     static let maxDensity: CGFloat = 2.0
     private static let densityKey = "contentDensity"
@@ -318,7 +341,7 @@ enum BlockRenderer {
             let body = inline(
                 text,
                 baseFont: baseFont(),
-                baseColor: todo == .done ? .secondaryLabelColor : .textColor,
+                baseColor: todo == .done ? .secondaryLabelColor : bodyColor,
                 strikethrough: false,
                 context: context
             )
@@ -379,10 +402,24 @@ enum BlockRenderer {
                 appendNodes(inner, to: out, font: font, color: color,
                             strike: strike, highlight: true, context: context)
             case .code(let s):
+                // Thin spaces give the pill *real* horizontal padding that takes
+                // part in layout — painting the pill wider than the glyphs would
+                // overlap tight neighbors and swallow source spaces. (They also
+                // stand in for the dropped backticks in caret-index mapping.)
+                // They keep the proportional font: in the mono font even a
+                // "thin" space is a full fixed-width advance, far too wide.
+                let pad = NSAttributedString(string: "\u{2009}", attributes: attrs([
+                    inlineCodeKey: true,
+                ]))
+                out.append(pad)
                 out.append(NSAttributedString(string: s, attributes: attrs([
                     .font: NSFont.monospacedSystemFont(ofSize: font.pointSize - 1, weight: .regular),
-                    .backgroundColor: NSColor.quaternarySystemFill,
+                    .foregroundColor: codeTextColor,
+                    // No `.backgroundColor`: `RenderedTextView` draws a single
+                    // rounded pill over the run (keyed on `inlineCodeKey`).
+                    inlineCodeKey: true,
                 ])))
+                out.append(pad)
             case .math(let s):
                 // SwiftMath may slip from v1 (SPEC §15); render source styled.
                 out.append(NSAttributedString(string: s, attributes: attrs([
