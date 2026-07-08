@@ -85,7 +85,7 @@ import Foundation
 
     @Test func stubPages() throws {
         let store = try makeGraph(["A": "- mentions [[Ghost Page]]\n"])
-        expectEqual(try store.cache.stubPageKeys(), ["ghost page"])
+        expectEqual(try store.cache.stubPageNames(), ["Ghost Page"])
         let stub = store.page(named: "Ghost Page")
         expectFalse(stub.fileExists)
         // Saving an empty stub creates no file (lazy creation).
@@ -169,7 +169,7 @@ import Foundation
         expectNil(try store.cache.page(key: "doomed"))
         expectEqual(store.config.favourites, [])
         // Now a stub again (still referenced from Other).
-        expectEqual(try store.cache.stubPageKeys(), ["doomed"])
+        expectEqual(try store.cache.stubPageNames(), ["Doomed"])
     }
 
     @Test func searchBlocks() throws {
@@ -266,7 +266,7 @@ import Foundation
         expectEqual(day.blocks.first?.content, "the imported day")
         expectEqual(day.displayTitle, "Jun 10th, 2026")
         // No stub created for the ISO spelling.
-        expectEqual(try store.cache.stubPageKeys(), [])
+        expectEqual(try store.cache.stubPageNames(), [])
     }
 
     @Test func dateKeysCanonicalize() {

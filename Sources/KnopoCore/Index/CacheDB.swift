@@ -53,7 +53,7 @@ public final class CacheDB {
     /// existing cache, whose rows were derived by older code, is force-rebuilt
     /// on next open. v2: recognize Logseq `yyyy_MM_dd` journal filenames.
     /// v3: canonicalize date page keys to ISO (cross-spelling journal refs).
-    public static let indexVersion: Int = 4
+    public static let indexVersion: Int = 5
 
     /// The index version this cache was last built with (PRAGMA user_version,
     /// independent of the schema migrator). 0 on a fresh/old database.
@@ -169,6 +169,12 @@ public final class CacheDB {
                 CREATE INDEX page_props_key ON page_props(key);
                 """)
         }
+        // Stubs (§3.2) display with the casing their reference was written in;
+        // `target_key` is lowercased, so keep the as-written form beside it.
+        migrator.registerMigration("v4-page-refs-display") { db in
+            try db.execute(
+                sql: "ALTER TABLE page_refs ADD COLUMN target_display TEXT NOT NULL DEFAULT ''")
+        }
         try migrator.migrate(dbQueue)
     }
 
@@ -242,8 +248,11 @@ public final class CacheDB {
                     let refs = RefExtractor.extract(from: block.content)
                     for target in refs.pageRefs {
                         try db.execute(
-                            sql: "INSERT INTO page_refs (block_id, page_key, target_key) VALUES (?, ?, ?)",
-                            arguments: [bid, key, PageName.key(target)]
+                            sql: """
+                            INSERT INTO page_refs (block_id, page_key, target_key, target_display)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            arguments: [bid, key, PageName.key(target), target]
                         )
                     }
                     for target in refs.blockRefs {
@@ -378,12 +387,14 @@ public final class CacheDB {
     }
 
     /// Page names referenced somewhere but with no file — stubs (SPEC §3.2).
-    /// Returns display-cased names as first encountered in a reference.
-    public func stubPageKeys() throws -> [String] {
+    /// Returns display-cased names as first encountered in a reference (the
+    /// bare `MIN(rowid)` makes SQLite pick `target_display` from that row).
+    public func stubPageNames() throws -> [String] {
         try dbQueue.read { db in
             try String.fetchAll(db, sql: """
-                SELECT DISTINCT target_key FROM page_refs
+                SELECT target_display, MIN(rowid) FROM page_refs
                 WHERE target_key NOT IN (SELECT name_key FROM pages)
+                GROUP BY target_key
                 ORDER BY target_key
                 """)
         }

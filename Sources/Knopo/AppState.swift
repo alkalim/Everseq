@@ -285,9 +285,9 @@ final class AppState: ObservableObject {
 
     func allPages() -> [PageListing] {
         var listings = (try? store.cache.allPages()) ?? []
-        let stubKeys = (try? store.cache.stubPageKeys()) ?? []
-        listings += stubKeys.map {
-            PageListing(nameKey: $0, displayName: $0, isJournal: false,
+        let stubNames = (try? store.cache.stubPageNames()) ?? []
+        listings += stubNames.map {
+            PageListing(nameKey: PageName.key($0), displayName: $0, isJournal: false,
                         journalDate: nil, fileExists: false, blockCount: 0)
         }
         return listings.sorted {
