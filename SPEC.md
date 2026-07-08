@@ -184,6 +184,7 @@ Tables (GitHub style) render read-only inside a block; editing happens in raw so
 - `Enter` creates a sibling block below; `Shift+Enter` inserts a newline inside the block; `Tab` / `Shift+Tab` indent/outdent; `Backspace` at start of an empty block deletes it and focuses the previous block.
 - `Alt+↑/↓` moves a block (with subtree) among its siblings.
 - `Cmd+Enter` toggles the focused block's `TODO`/`DONE` state (§5.2).
+- Typing a formatting marker over a **selection** wraps it instead of replacing it: `[`, `` ` ``, `*`, `~`, `=`, `$` surround the selected text, which stays selected — pressing the key again doubles the marker (`[` `[` → `[[Page]]`, `*` `*` → `**bold**`).
 - Clicking a bullet **zooms** into that block (it becomes the temporary page root, with a breadcrumb back). Clicking the fold triangle toggles `collapsed`. An empty leaf block hides its bullet while unfocused (the gutter is kept, so nothing shifts).
 
 ### 5.5 Slash commands

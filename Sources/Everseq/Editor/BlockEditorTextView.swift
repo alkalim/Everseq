@@ -123,6 +123,27 @@ final class BlockEditorTextView: NSTextView {
 
     // MARK: - Key handling (SPEC §5.4, §13)
 
+    /// Formatting markers that wrap a selection instead of replacing it. The
+    /// inner text stays selected, so pressing the key again doubles the marker:
+    /// `[` `[` → `[[Page]]`, `*` `*` → `**bold**`, `~` `~` → `~~strike~~`.
+    private static let wrapMarkers: [String: String] = [
+        "[": "]", "`": "`", "*": "*", "~": "~", "=": "=", "$": "$",
+    ]
+
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        let sel = selectedRange()
+        if sel.length > 0, !hasMarkedText(),
+           let typed = insertString as? String, let close = Self.wrapMarkers[typed] {
+            let inner = (string as NSString).substring(with: sel)
+            super.insertText(typed + inner + close, replacementRange: sel)
+            // Re-select the inner text (not the markers) for repeat presses.
+            setSelectedRange(NSRange(
+                location: sel.location + (typed as NSString).length, length: sel.length))
+            return
+        }
+        super.insertText(insertString, replacementRange: replacementRange)
+    }
+
     override func keyDown(with event: NSEvent) {
         if hasMarkedText() { // never break IME composition
             super.keyDown(with: event)
