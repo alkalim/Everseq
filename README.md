@@ -1,12 +1,12 @@
-# Everseq
+# Knopo
 
 A native (AppKit, no Electron) macOS outliner in the Logseq tradition - your notes are blocks, pages are
 trees of blocks, and everything lives as plain Markdown files you own. Local-first,
 no account, no lock-in: the app is just a fast index and editor over a folder of
-`.md` files. Close Everseq and your graph is still a readable, greppable, git-able
+`.md` files. Close Knopo and your graph is still a readable, greppable, git-able
 directory of Markdown.
 
-![Everseq showing a page with linked references alongside journal and page cards in the right sidebar](docs/screenshot.png)
+![Knopo showing a page with linked references alongside journal and page cards in the right sidebar](docs/screenshot.png)
 
 ## Features
 
@@ -44,14 +44,14 @@ A fast, low-footprint, files-stay-yours outliner:
   so editing never churns your files.
 - **Scales without bloating** - the whole graph is never held in RAM; pages load
   on demand, so memory and startup stay flat as the graph grows.
-- **Fast everything** - a rebuildable SQLite index (`.everseq/cache.db`) backs
+- **Fast everything** - a rebuildable SQLite index (`.knopo/cache.db`) backs
   search, backlinks, tags, and queries, keeping navigation cheap on large graphs.
 - **Native, not a browser** - AppKit/SwiftUI, no Electron: small footprint, quick
   launch, and platform-native text editing and scrolling.
 
 ## How it compares
 
-|                       | Obsidian | Logseq | Roam Research | Workflowy | Craft | Everseq |
+|                       | Obsidian | Logseq | Roam Research | Workflowy | Craft | Knopo |
 | --------------------- | :------: | :----: | :-----------: | :-------: | :---: | :-----: |
 | Open source           | ✗        | ✓      | ✗             | ✗         | ✗     | ✓       |
 | Native (no Electron)  | ✗        | ✗      | ✗             | ✗         | ✓     | ✓       |
@@ -63,7 +63,7 @@ A fast, low-footprint, files-stay-yours outliner:
 | Plugins               | ✓        | ✓      | ✓             | ✗         | ✓     | ✗       |
 
 The closest neighbour is **Logseq** - same outliner model, open source, block
-references, embeds, and queries - but Electron. Everseq trades Logseq's
+references, embeds, and queries - but Electron. Knopo trades Logseq's
 cross-platform reach for a single-platform native app: smaller footprint, faster
 launch, and platform-native text editing and scrolling.
 
@@ -73,17 +73,17 @@ Early but very useable. On-disk conventions may still change.
 
 ## Graph layout
 
-A graph is a directory. Everseq lays out and maintains:
+A graph is a directory. Knopo lays out and maintains:
 
 ```
 <graph>/
   pages/         # one Markdown file per page
   journals/      # one file per day
   assets/        # pasted/linked images and files
-  .everseq/      # rebuildable cache (SQLite index, config) - safe to delete
+  .knopo/      # rebuildable cache (SQLite index, config) - safe to delete
 ```
 
-The Markdown files are the source of truth; `.everseq/` is derived and can be
+The Markdown files are the source of truth; `.knopo/` is derived and can be
 regenerated at any time.
 
 ## Build / test / run
@@ -93,10 +93,10 @@ A Swift Package - builds with the Command Line Tools, no Xcode required.
 ```sh
 swift build                                    # build
 ./scripts/test.sh                              # run the test suite (Swift Testing)
-EVERSEQ_GRAPH=/path/to/graph swift run Everseq # run against a graph folder
+KNOPO_GRAPH=/path/to/graph swift run Knopo # run against a graph folder
 ```
 
-`EVERSEQ_GRAPH` defaults to `~/Documents/Everseq`; the folder is created and seeded
+`KNOPO_GRAPH` defaults to `~/Documents/Knopo`; the folder is created and seeded
 on first launch. To produce a double-clickable `.app`, see `scripts/build-app.sh`.
 
 ## Running a downloaded build
@@ -104,7 +104,7 @@ on first launch. To produce a double-clickable `.app`, see `scripts/build-app.sh
 This app is not notarized, so macOS Gatekeeper blocks a *downloaded* copy on first
 launch. To run it, either:
 
-- strip the quarantine flag - `xattr -dr com.apple.quarantine /path/to/Everseq.app`, or
+- strip the quarantine flag - `xattr -dr com.apple.quarantine /path/to/Knopo.app`, or
 - open **System Settings → Privacy & Security** and click **Open Anyway**.
 
 On macOS 15 (Sequoia) the old Control-click → Open shortcut no longer bypasses

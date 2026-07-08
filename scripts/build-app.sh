@@ -1,7 +1,7 @@
 #!/bin/zsh
-# Builds a double-clickable Everseq.app bundle from the SPM executable.
+# Builds a double-clickable Knopo.app bundle from the SPM executable.
 #
-#   ./scripts/build-app.sh            release build -> build/Everseq.app
+#   ./scripts/build-app.sh            release build -> build/Knopo.app
 #   ./scripts/build-app.sh debug      debug build (faster, for testing)
 set -e
 cd "$(dirname "$0")/.."
@@ -12,8 +12,8 @@ CONFIG="${1:-release}"
 # so the app reads e.g. "dev (1a2b3c)" locally and "0.2.0 (42)" from a tagged CI build.
 VERSION="${VERSION:-dev}"                                              # CFBundleShortVersionString
 BUILD="${BUILD:-$(git rev-parse --short HEAD 2>/dev/null || echo 0)}"  # CFBundleVersion
-APP="build/Everseq.app"
-BIN=".build/$CONFIG/Everseq"
+APP="build/Knopo.app"
+BIN=".build/$CONFIG/Knopo"
 
 echo "Building ($CONFIG)…"
 swift build -c "$CONFIG"
@@ -21,7 +21,7 @@ swift build -c "$CONFIG"
 echo "Assembling $APP…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Everseq"
+cp "$BIN" "$APP/Contents/MacOS/Knopo"
 
 # SPM resource bundles (e.g. GRDB's) are resolved via Bundle.main.resourceURL
 # when running from an app bundle.
@@ -44,25 +44,25 @@ build_static_icns() {
 }
 
 echo "Building app icon…"
-# The icon is authored in Everseq.icon (Icon Composer). With actool (Xcode) we
+# The icon is authored in Knopo.icon (Icon Composer). With actool (Xcode) we
 # compile it to BOTH:
 #   • Assets.car   → macOS 26 "Icon & widget style" theming (Default/Dark/Tinted/Clear)
-#   • Everseq.icns → backwards-compatible static icon used on macOS 15 and earlier
+#   • Knopo.icns → backwards-compatible static icon used on macOS 15 and earlier
 # Without actool we fall back to a static .icns from Icon/AppIconFallback.png.
 ICON_FILE="AppIcon"     # CFBundleIconFile value (basename, no extension)
 ICON_NAME_ENTRY=""      # optional CFBundleIconName block (only when themable)
-if xcrun --find actool >/dev/null 2>&1 && [ -d Everseq.icon ]; then
-  echo "  compiling Everseq.icon (themable Assets.car + backwards-compatible .icns)…"
-  if xcrun actool Everseq.icon \
+if xcrun --find actool >/dev/null 2>&1 && [ -d Knopo.icon ]; then
+  echo "  compiling Knopo.icon (themable Assets.car + backwards-compatible .icns)…"
+  if xcrun actool Knopo.icon \
         --compile "$APP/Contents/Resources" \
-        --app-icon Everseq \
+        --app-icon Knopo \
         --platform macosx \
         --minimum-deployment-target 14.0 \
         --output-partial-info-plist "$(mktemp)" >/dev/null 2>&1 \
      && [ -f "$APP/Contents/Resources/Assets.car" ] \
-     && [ -f "$APP/Contents/Resources/Everseq.icns" ]; then
-    ICON_FILE="Everseq"
-    ICON_NAME_ENTRY=$'\n    <key>CFBundleIconName</key>\n    <string>Everseq</string>'
+     && [ -f "$APP/Contents/Resources/Knopo.icns" ]; then
+    ICON_FILE="Knopo"
+    ICON_NAME_ENTRY=$'\n    <key>CFBundleIconName</key>\n    <string>Knopo</string>'
     echo "  themable icon built ✓"
   else
     echo "  ⚠️  actool failed — using static .icns fallback (no theming)."
@@ -79,15 +79,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Everseq</string>
+    <string>Knopo</string>
     <key>CFBundleDisplayName</key>
-    <string>Everseq</string>
+    <string>Knopo</string>
     <key>CFBundleExecutable</key>
-    <string>Everseq</string>
+    <string>Knopo</string>
     <key>CFBundleIconFile</key>
     <string>$ICON_FILE</string>$ICON_NAME_ENTRY
     <key>CFBundleIdentifier</key>
-    <string>com.everseq.app</string>
+    <string>com.knopo.app</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -112,5 +112,5 @@ PLIST
 codesign --force --sign - "$APP" >/dev/null 2>&1
 
 echo "Done: $APP"
-echo "  open $APP                            # default graph: ~/Documents/Everseq"
-echo "  EVERSEQ_GRAPH=~/notes $APP/Contents/MacOS/Everseq   # custom graph"
+echo "  open $APP                            # default graph: ~/Documents/Knopo"
+echo "  KNOPO_GRAPH=~/notes $APP/Contents/MacOS/Knopo   # custom graph"

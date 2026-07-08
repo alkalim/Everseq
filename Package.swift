@@ -2,29 +2,29 @@
 import PackageDescription
 
 let package = Package(
-    name: "Everseq",
+    name: "Knopo",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "EverseqCore", targets: ["EverseqCore"]),
-        .executable(name: "Everseq", targets: ["Everseq"]),
+        .library(name: "KnopoCore", targets: ["KnopoCore"]),
+        .executable(name: "Knopo", targets: ["Knopo"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
     ],
     targets: [
         .target(
-            name: "EverseqCore",
+            name: "KnopoCore",
             dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
-            name: "Everseq",
-            dependencies: ["EverseqCore"],
+            name: "Knopo",
+            dependencies: ["KnopoCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "EverseqCoreTests",
-            dependencies: ["EverseqCore"],
+            name: "KnopoCoreTests",
+            dependencies: ["KnopoCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

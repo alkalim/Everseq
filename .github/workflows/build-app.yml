@@ -1,6 +1,6 @@
 name: Build app
 
-# Builds Everseq.app and uploads it as an artifact; a version tag (v*) also
+# Builds Knopo.app and uploads it as an artifact; a version tag (v*) also
 # attaches it to a GitHub Release.
 on:
   workflow_dispatch:
@@ -16,17 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build Everseq.app (release)
+      - name: Build Knopo.app (release)
         # On a tag (v0.2.0 → 0.2.0) the version comes from the tag; otherwise "dev".
         # The build number is the CI run number (monotonic).
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="dev"; fi
-          # Name the download by version, OS, and CPU — e.g. Everseq-0.1.2-macos-arm64.zip.
-          echo "ZIP=Everseq-${VERSION}-macos-$(uname -m).zip" >> "$GITHUB_ENV"
+          # Name the download by version, OS, and CPU — e.g. Knopo-0.1.2-macos-arm64.zip.
+          echo "ZIP=Knopo-${VERSION}-macos-$(uname -m).zip" >> "$GITHUB_ENV"
           VERSION="$VERSION" BUILD="$GITHUB_RUN_NUMBER" ./scripts/build-app.sh release
 
       - name: Zip the bundle
-        run: ditto -c -k --keepParent build/Everseq.app "$ZIP"
+        run: ditto -c -k --keepParent build/Knopo.app "$ZIP"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -52,12 +52,12 @@ jobs:
 
           ---
 
-          ### Opening Everseq the first time
+          ### Opening Knopo the first time
 
-          Everseq isn't code-signed or notarized yet, so macOS quarantines the download and refuses to open it. After unzipping and moving `Everseq.app` into Applications, open the Terminal (Applications ▸ Utilities ▸ Terminal) and run this command to clear the quarantine flag:
+          Knopo isn't code-signed or notarized yet, so macOS quarantines the download and refuses to open it. After unzipping and moving `Knopo.app` into Applications, open the Terminal (Applications ▸ Utilities ▸ Terminal) and run this command to clear the quarantine flag:
 
           ```sh
-          xattr -dr com.apple.quarantine /Applications/Everseq.app
+          xattr -dr com.apple.quarantine /Applications/Knopo.app
           ```
 
           Then open the app normally. (Adjust the path if you keep the app elsewhere.)

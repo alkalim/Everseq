@@ -1,8 +1,8 @@
-# Everseq — Specification
+# Knopo — Specification
 
 A local-first, single-user outliner: everything is a block, pages are trees of blocks, knowledge is connected through `[[Page]]` references and block references, and a daily journal is the default entry point.
 
-This document specifies functional behavior, the data model, the on-disk format, and the chosen technology stack (§15). Everseq is a native macOS application.
+This document specifies functional behavior, the data model, the on-disk format, and the chosen technology stack (§15). Knopo is a native macOS application.
 
 ---
 
@@ -106,7 +106,7 @@ There is no tag entity to open as a document, no tag content, no tag properties.
     Projects%2FOutliner.md        // '/' percent-encoded in filenames
   journals/
     2026-06-10.md
-  .everseq/
+  .knopo/
     config.json                   // favourites, settings
     cache.db                      // rebuildable index (SQLite); safe to delete
 ```
@@ -130,11 +130,11 @@ Pages are serialized as Markdown bullet lists; indentation (2 spaces) encodes th
 Rules:
 
 - Each bullet (`- `) is one block. Continuation lines indented to the bullet's content column belong to the same block (multi-line blocks: code fences, quotes).
-- **Preamble** — any lines *before the first bullet* (e.g. a bare `# Heading` with no `- `) are not blocks. They are preserved verbatim for byte-stable round-trip and rendered **read-only** above the outline, so leading content isn't hidden but also isn't editable in place (edit the file to change it). This differs from Logseq, which re-serializes the whole file and promotes such content to an editable, still-un-bulleted first block; Everseq keeps it as read-only preamble to honor the per-block round-trip guarantee. (A future option: parse it as a raw-backed first block that stays dash-less until edited.)
+- **Preamble** — any lines *before the first bullet* (e.g. a bare `# Heading` with no `- `) are not blocks. They are preserved verbatim for byte-stable round-trip and rendered **read-only** above the outline, so leading content isn't hidden but also isn't editable in place (edit the file to change it). This differs from Logseq, which re-serializes the whole file and promotes such content to an editable, still-un-bulleted first block; Knopo keeps it as read-only preamble to honor the per-block round-trip guarantee. (A future option: parse it as a raw-backed first block that stays dash-less until edited.)
 - `id:: <uuid>` is written as a property line under a block **only when the block is referenced** by at least one block reference. Unreferenced blocks carry no persisted id (their UUIDs live only in the cache), keeping files clean. Once written, an `id::` is never removed automatically.
 - `collapsed:: true` is persisted the same way, only when true.
 - Page properties (`key:: value` lines in the first block) are supported minimally: parsed, displayed, and round-tripped, but no semantics are attached except `title::` (overrides display name). `key:: value` lines written un-bulleted in the preamble (the Logseq page-property convention) are also indexed as page properties — stored page-scoped, kept distinct from block properties — so `{{query key:: value}}` surfaces the page as a page-level result (even a properties-only page with no blocks), without conflating page and block properties. The `title::` display override still reads only the first block.
-- Files edited externally are detected via file-watcher and reloaded; if the page is open with unsaved changes, last-writer-wins with the losing version saved to `.everseq/conflicts/`.
+- Files edited externally are detected via file-watcher and reloaded; if the page is open with unsaved changes, last-writer-wins with the losing version saved to `.knopo/conflicts/`.
 - The app must **round-trip** files byte-stably: opening and saving a page without edits must not change the file.
 
 ---
@@ -379,7 +379,7 @@ The reference index updates incrementally on every block commit (debounced ~300 
 - Journal pages are ordinary pages in every other respect: they can be referenced (`[[2026-06-10]]`), favourited, and they show linked references — this is what makes "what links to this day" work for date references. A date reference renders as the formatted display title ("Jun 10th, 2026") while the file keeps the stable ISO text (§5.1).
 - Typing `/today`, `/tomorrow`, `/yesterday` in a block inserts the corresponding `[[date]]` reference. `/date` opens a calendar to insert `[[date]]` for any chosen day (§5.5.4); free-form natural-language date entry ("next friday") is deferred.
 
-**Design note (deliberate):** Everseq references journals by their stable ISO date and renders the pretty title at display time, rather than storing the human title in the file. This keeps references parser-free and format-stable (changing the display format can never orphan references), at the cost of not resolving title-form date references.
+**Design note (deliberate):** Knopo references journals by their stable ISO date and renders the pretty title at display time, rather than storing the human title in the file. This keeps references parser-free and format-stable (changing the display format can never orphan references), at the cost of not resolving title-form date references.
 
 ---
 
@@ -405,7 +405,7 @@ The reference index updates incrementally on every block commit (debounced ~300 
 - **Left sidebar**: Journal (home), Favourites, Recents, Tags, All Pages. The Favourites, Recents, and Tags sections are collapsible (state persisted) and capped at 15 entries each in v1.
 - **Right sidebar**: stack of panes opened via `Cmd+Click` (or `Shift+Click`) on any page/block reference or sidebar entry; each pane closable; resizable divider; used for side-by-side reference work. The open panes and the dragged divider width are persisted per graph in `config.json`, so a graph reopens with its right sidebar as left. Resizing the window scales the main view and the panel proportionally (their ratio holds); once the main view is at its minimum useable width, further narrowing shrinks only the panel.
 - **Windows**: each **window** shows one graph; different windows may show **different** graphs (e.g. a roadmap graph beside a work graph). A new window (`Cmd+N`) opens the last-used graph. Any windows showing the **same** graph share its data, undo stack, and index (the store is opened once per folder, never double-opened), while each keeps its own current page, navigation history, and right-sidebar panes.
-- **Open Graph (`Cmd+O`)**: pick or create a graph folder; it opens in (switches) the **focused window only**, leaving other windows on their graphs. The last graph opened is reopened on next launch. Precedence at launch: `EVERSEQ_GRAPH` env var → last opened → `~/Documents/Everseq`.
+- **Open Graph (`Cmd+O`)**: pick or create a graph folder; it opens in (switches) the **focused window only**, leaving other windows on their graphs. The last graph opened is reopened on next launch. Precedence at launch: `KNOPO_GRAPH` env var → last opened → `~/Documents/Knopo`.
 - **Search (`Cmd+K`)**: single dialog combining fuzzy page-name match (top section) and full-text block search (below), with `Enter` to navigate and `Cmd+Enter` to open in right sidebar. Full-text index lives in `cache.db`. The dialog is a fixed size (it does not resize as results change).
 - **Find in page (`Cmd+F`)**: a find bar scoped to the current view's outline(s) — matches the rendered (visible) text, highlights all matches with the current one emphasized, shows "n of m", and steps with `Cmd+G` / `Shift+Cmd+G`. On the journal home it spans all currently-rendered days. (Distinct from `Cmd+K`, which searches the whole graph via the index.)
 - **Breadcrumbs** when zoomed into a block: `Page › parent › parent`, each segment clickable.
