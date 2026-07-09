@@ -2,6 +2,21 @@
 
 Notable changes per release, newest first. Dates are release dates.
 
+## v0.3.0 (2026-07-09)
+
+Everseq is now **Knopo**. Same app, new name: the download, the app bundle, and the `knopo://` link scheme all follow. A graph's index and settings folder is now `.knopo/` (the old `.everseq/` folder is ignored; the index rebuilds automatically, but per-graph favourites and sidebar layout do not carry over).
+
+**New**
+- Drag and drop: drag a block by its bullet to reorder it or move it under another parent. Dropping between rows inserts it there; dropping onto a block makes it that block's first child. Dragging a selected bullet moves the whole selection.
+- Moving blocks with the keyboard (`⌥↑`/`⌥↓`) now works on a multi-block selection too, moving the selected blocks as one unit.
+- Typing a formatting marker with text selected wraps the selection instead of replacing it: `[` `[` turns it into a page link, backticks into code, `*` `*` into bold, and so on.
+
+**Improved**
+- Lighter look for the outline: softer text color, smaller light-gray bullets that scale with zoom, and a rounded padded box behind inline code.
+
+**Fixed**
+- Pages that exist only as references (stubs) now show with the casing they were written in, not lowercase.
+
 ## v0.2.3 (2026-07-07)
 
 Query pages by their properties, with editor and navigation fixes.
