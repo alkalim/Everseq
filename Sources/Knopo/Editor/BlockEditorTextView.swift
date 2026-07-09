@@ -71,6 +71,39 @@ final class BlockEditorTextView: NSTextView {
                          height: CGFloat.greatestFiniteMagnitude)
     }
 
+    // MARK: - Context menu
+
+    /// The stock NSTextView menu is a kitchen sink — Font, Substitutions,
+    /// Transformations, Speech, Layout Orientation… — meaningless or harmful in
+    /// a plain-Markdown source editor (the Substitutions submenu can re-enable
+    /// the smart quotes/dashes deliberately disabled in `setUp`). Serve just the
+    /// useful core instead.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        if selectedRange().length > 0 {
+            let selected = (string as NSString).substring(with: selectedRange())
+            let short = selected.count > 24 ? selected.prefix(24) + "…" : selected[...]
+            let lookUp = NSMenuItem(title: "Look Up “\(short)”",
+                                    action: #selector(lookUpSelection), keyEquivalent: "")
+            lookUp.target = self
+            menu.addItem(lookUp)
+            menu.addItem(.separator())
+        }
+        menu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Select All",
+                     action: #selector(NSText.selectAll(_:)), keyEquivalent: "")
+        return menu
+    }
+
+    @objc private func lookUpSelection() {
+        let range = selectedRange()
+        guard range.length > 0, let storage = textStorage else { return }
+        showDefinition(for: storage.attributedSubstring(from: range), range: range)
+    }
+
     // MARK: - Height measurement
 
     /// Hidden twin of the editor used to measure focused-row heights with the
