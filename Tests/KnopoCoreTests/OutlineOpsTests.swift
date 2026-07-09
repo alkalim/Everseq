@@ -124,6 +124,69 @@ import Foundation
         expectEqual(blocks[1].children.map(\.content), ["a1"])
     }
 
+    @Test func moveRunMovesContiguousSiblingsAsUnit() {
+        var blocks = forest("- a\n- b\n- c\n- d\n")
+        expectTrue(OutlineOps.moveRun([[1], [2]], by: 1, in: &blocks))
+        expectEqual(blocks.map(\.content), ["a", "d", "b", "c"])
+        expectTrue(OutlineOps.moveRun([[2], [3]], by: -1, in: &blocks))
+        expectEqual(blocks.map(\.content), ["a", "b", "c", "d"])
+        // Boundary: a run touching the edge can't move past it (no mutation).
+        expectFalse(OutlineOps.moveRun([[0], [1]], by: -1, in: &blocks))
+        expectFalse(OutlineOps.moveRun([[2], [3]], by: 1, in: &blocks))
+        expectEqual(blocks.map(\.content), ["a", "b", "c", "d"])
+    }
+
+    @Test func moveToReparentsUnderNewParent() {
+        var blocks = forest("- a\n  - a1\n- b\n")
+        // Drop `a` (with subtree) as first child of `b`.
+        expectTrue(OutlineOps.move([[0]], to: [1, 0], in: &blocks))
+        expectEqual(blocks.map(\.content), ["b"])
+        expectEqual(blocks[0].children.map(\.content), ["a"])
+        expectEqual(blocks[0].children[0].children.map(\.content), ["a1"])
+        // Depth changed → subtree re-serializes canonically.
+        expectNil(blocks[0].children[0].raw)
+    }
+
+    @Test func moveToAdjustsIndexAndKeepsOrder() {
+        var blocks = forest("- a\n- b\n- c\n- d\n")
+        // Non-contiguous multi-drag (a, c) to the end keeps visual order.
+        expectTrue(OutlineOps.move([[0], [2]], to: [4], in: &blocks))
+        expectEqual(blocks.map(\.content), ["b", "d", "a", "c"])
+        // Moving down within one parent lands after the removal shift.
+        expectTrue(OutlineOps.move([[0]], to: [3], in: &blocks))
+        expectEqual(blocks.map(\.content), ["d", "a", "b", "c"])
+    }
+
+    @Test func moveToRejectsOwnSubtreeAndNormalizesDescendants() {
+        var blocks = forest("- a\n  - a1\n- b\n")
+        // Into its own subtree: rejected, nothing mutated.
+        expectFalse(OutlineOps.move([[0]], to: [0, 1], in: &blocks))
+        expectEqual(blocks.map(\.content), ["a", "b"])
+        // A selected descendant travels with its ancestor, not twice.
+        expectTrue(OutlineOps.move([[0], [0, 0]], to: [2], in: &blocks))
+        expectEqual(blocks.map(\.content), ["b", "a"])
+        expectEqual(blocks[1].children.map(\.content), ["a1"])
+    }
+
+    @Test func moveToLiftsChildToTopLevel() {
+        var blocks = forest("- a\n  - a1\n  - a2\n- b\n")
+        expectTrue(OutlineOps.move([[0, 1]], to: [1], in: &blocks))
+        expectEqual(blocks.map(\.content), ["a", "a2", "b"])
+        expectEqual(blocks[0].children.map(\.content), ["a1"])
+    }
+
+    @Test func moveRunCarriesSubtreesAndRejectsNonSiblings() {
+        var blocks = forest("- a\n- b\n  - b1\n- c\n  - c1\n")
+        expectTrue(OutlineOps.moveRun([[1], [2]], by: -1, in: &blocks))
+        expectEqual(blocks.map(\.content), ["b", "c", "a"])
+        expectEqual(blocks[0].children.map(\.content), ["b1"])
+        expectEqual(blocks[1].children.map(\.content), ["c1"])
+        // Non-siblings and non-contiguous runs are rejected without mutation.
+        expectFalse(OutlineOps.moveRun([[0], [0, 0]], by: 1, in: &blocks))
+        expectFalse(OutlineOps.moveRun([[0], [2]], by: 1, in: &blocks))
+        expectEqual(blocks.map(\.content), ["b", "c", "a"])
+    }
+
     @Test func mergeWithPrevious() {
         var blocks = forest("- first\n- second\n")
         let result = OutlineOps.mergeWithPrevious([1], in: &blocks)

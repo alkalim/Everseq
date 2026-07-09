@@ -127,6 +127,91 @@ public enum OutlineOps {
         return true
     }
 
+    /// Alt+↑/↓ on a multi-block selection: moves a run of blocks (each with its
+    /// subtree) among their siblings as one unit. The paths must be siblings and
+    /// contiguous — anything else has no well-defined "move by one" and returns
+    /// false without mutating.
+    @discardableResult
+    public static func moveRun(_ paths: [[Int]], by delta: Int, in blocks: inout [Block]) -> Bool {
+        guard let first = paths.first else { return false }
+        if paths.count == 1 { return move(first, by: delta, in: &blocks) }
+        let parentPath = Array(first.dropLast())
+        let indices = paths.compactMap(\.last).sorted()
+        guard paths.allSatisfy({ Array($0.dropLast()) == parentPath }),
+              indices.last! - indices.first! == indices.count - 1  // contiguous
+        else { return false }
+        // Bounds for the whole run, then step the blocks one at a time — from
+        // the leading edge moving up, from the trailing edge moving down — so
+        // each swap is with the (unselected) neighbor of the run.
+        let siblingCount = parentPath.isEmpty
+            ? blocks.count
+            : (blocks.block(at: parentPath)?.children.count ?? 0)
+        guard indices.first! + delta >= 0, indices.last! + delta < siblingCount else { return false }
+        for index in (delta < 0 ? indices : indices.reversed()) {
+            guard move(parentPath + [index], by: delta, in: &blocks) else { return false }
+        }
+        return true
+    }
+
+    /// Drag-and-drop: moves blocks (each with its subtree) to an arbitrary
+    /// position, possibly under a new parent. `destination` is an insertion
+    /// path — its last component is the index among the new parent's children,
+    /// expressed against the tree *before* any removal (the op adjusts it).
+    /// Unlike `moveRun`, the sources may be non-contiguous and span parents.
+    /// A dragged descendant of a dragged block travels with its ancestor.
+    /// Returns false (without mutating) when the destination lies inside a
+    /// dragged subtree or either side doesn't resolve.
+    @discardableResult
+    public static func move(_ paths: [[Int]], to destination: [Int], in blocks: inout [Block]) -> Bool {
+        guard !destination.isEmpty else { return false }
+        // Top-most dragged paths only, in visual (lexicographic) order.
+        var roots: [[Int]] = []
+        for p in paths.sorted(by: precedes)
+        where !roots.contains(where: { p.count > $0.count && Array(p.prefix($0.count)) == $0 }) {
+            roots.append(p)
+        }
+        guard !roots.isEmpty, roots.allSatisfy({ blocks.block(at: $0) != nil }) else { return false }
+        for r in roots where destination.count >= r.count
+            && Array(destination.prefix(r.count)) == r { return false }
+        let destParent = Array(destination.dropLast())
+        guard destParent.isEmpty || blocks.block(at: destParent) != nil else { return false }
+
+        // Remove bottom-up (descending order keeps the remaining source paths
+        // valid), adjusting the destination for every removal that shifts it.
+        var dest = destination
+        var moved: [(depth: Int, block: Block)] = []
+        for path in roots.reversed() {
+            guard let block = blocks.remove(at: path) else { return false }
+            moved.append((path.count, block))
+            let level = path.count - 1
+            if dest.count > level, Array(dest.prefix(level)) == Array(path.prefix(level)),
+               dest[level] > path[level] {
+                dest[level] -= 1
+            }
+        }
+        // Clamp the insertion index (an end-of-list drop can overshoot once the
+        // sources above it are removed).
+        let siblingCount = dest.count == 1
+            ? blocks.count
+            : (blocks.block(at: Array(dest.dropLast()))?.children.count ?? 0)
+        dest[dest.count - 1] = min(dest[dest.count - 1], siblingCount)
+        for (depth, block) in moved.reversed() {  // back to visual order
+            var b = block
+            // A depth change re-indents the subtree, so exact source slices no
+            // longer apply (§4.2) — drop them for canonical re-serialization.
+            if depth != dest.count { b.invalidateRaw(deep: true) }
+            blocks.insert(b, at: dest)
+            dest[dest.count - 1] += 1
+        }
+        return true
+    }
+
+    /// Lexicographic path order — the visual (top-to-bottom) order of rows.
+    private static func precedes(_ a: [Int], _ b: [Int]) -> Bool {
+        for (x, y) in zip(a, b) where x != y { return x < y }
+        return a.count < b.count
+    }
+
     /// Backspace at start of an empty block: delete it; returns the path-id of
     /// the block that should receive focus (previous visible row).
     @discardableResult

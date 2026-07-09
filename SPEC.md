@@ -182,10 +182,11 @@ Tables (GitHub style) render read-only inside a block; editing happens in raw so
 - The focused block shows **raw Markdown source** in a plain text editor.
 - Unfocused blocks show the **rendered** form.
 - `Enter` creates a sibling block below; `Shift+Enter` inserts a newline inside the block; `Tab` / `Shift+Tab` indent/outdent; `Backspace` at start of an empty block deletes it and focuses the previous block.
-- `Alt+↑/↓` moves a block (with subtree) among its siblings.
+- `Alt+↑/↓` moves a block (with subtree) among its siblings. With a multi-block selection, the selected blocks move as one unit: a selected descendant travels with its selected ancestor, and the top-most selected blocks must be contiguous siblings (otherwise nothing moves).
 - `Cmd+Enter` toggles the focused block's `TODO`/`DONE` state (§5.2).
 - Typing a formatting marker over a **selection** wraps it instead of replacing it: `[`, `` ` ``, `*`, `~`, `=`, `$` surround the selected text, which stays selected — pressing the key again doubles the marker (`[` `[` → `[[Page]]`, `*` `*` → `**bold**`).
 - Clicking a bullet **zooms** into that block (it becomes the temporary page root, with a breadcrumb back). Clicking the fold triangle toggles `collapsed`. An empty leaf block hides its bullet while unfocused (the gutter is kept, so nothing shifts).
+- **Dragging a bullet** moves the block (with subtree): dropping between rows inserts it as the sibling before the row below the gap; dropping onto a row inserts it as that block's first child (expanding it if collapsed). Dragging a bullet inside the node selection moves the whole selection; drops into a dragged subtree are rejected. Blocks keep their ids across drops, so block references stay intact. Same-page only for now.
 
 ### 5.5 Slash commands
 

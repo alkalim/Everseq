@@ -161,6 +161,12 @@ final class OutlineEditorController: NSObject {
     private var renderedWithZoom = BlockRenderer.zoom
     private var renderedWithDensity = BlockRenderer.density
 
+    /// Bullet drag-and-drop (SPEC §5.4). The pasteboard carries only a marker —
+    /// the dragged blocks live here, and drops are accepted from this controller
+    /// alone (same page), so ids never round-trip through the pasteboard.
+    static let blockDragType = NSPasteboard.PasteboardType("com.knopo.block-drag")
+    private var draggingIDs: [UUID] = []
+
     // Node selection (SPEC §13): block-level multi-select when not editing.
     private var selectedRows: Set<Int> = []
     private var selectionAnchor: Int?
@@ -203,6 +209,7 @@ final class OutlineEditorController: NSObject {
         tableView.delegate = self
         tableView.onWidthChange = { [weak self] in self?.widthDidChange() }
         tableView.onKeyDown = { [weak self] in self?.handleSelectionKeyDown($0) ?? false }
+        tableView.registerForDraggedTypes([Self.blockDragType])
     }
 
     private func setUpAutocomplete() {
@@ -973,17 +980,87 @@ final class OutlineEditorController: NSObject {
         }
     }
 
+    /// ⌥↑/⌥↓ with a node selection: moves the selected blocks (subtrees) as one
+    /// unit. A selected descendant travels with its selected ancestor, so only
+    /// the top-most blocks move; they must be contiguous siblings.
     private func moveSelection(by delta: Int) {
-        guard selectedRows.count == 1, let i = selectedRows.first, rows.indices.contains(i) else { return }
-        let id = rows[i].block.id
-        var doc = app.document(for: pageName)
-        guard let path = doc.blocks.path(to: id),
-              OutlineOps.move(path, by: delta, in: &doc.blocks) else { return }
-        commitStructural(doc, label: "Move Block")
-        reloadAndFocus(nil, selection: nil)
-        if let newIndex = rows.firstIndex(where: { $0.block.id == id }) {
-            setSelection([newIndex], anchor: newIndex)
+        let ids = topMostSelectedRows().compactMap {
+            rows.indices.contains($0) ? rows[$0].block.id : nil
         }
+        guard !ids.isEmpty else { return }
+        // Captured by id so the same blocks can be re-selected at their new rows.
+        let selectedIDs = Set(selectedRows.compactMap {
+            rows.indices.contains($0) ? rows[$0].block.id : nil
+        })
+        var doc = app.document(for: pageName)
+        let paths = ids.compactMap { doc.blocks.path(to: $0) }
+        guard paths.count == ids.count,
+              OutlineOps.moveRun(paths, by: delta, in: &doc.blocks) else { return }
+        commitStructural(doc, label: ids.count == 1 ? "Move Block" : "Move Blocks")
+        reloadAndFocus(nil, selection: nil)
+        let newSelection = Set(rows.indices.filter { selectedIDs.contains(rows[$0].block.id) })
+        setSelection(newSelection, anchor: newSelection.min())
+    }
+
+    // MARK: - Bullet drag-and-drop (SPEC §5.4)
+
+    /// Starts a bullet drag. When the pressed block is part of the node
+    /// selection the whole selection travels (top-most blocks; descendants ride
+    /// with their ancestors); otherwise just this block and its subtree.
+    private func beginDragSession(for id: UUID, event: NSEvent, from view: NSView) {
+        guard let row = rows.firstIndex(where: { $0.block.id == id }) else { return }
+        if focusedBlockID != nil { endEditing() }
+        let dragRows: [Int]
+        if selectedRows.contains(row) {
+            dragRows = topMostSelectedRows()
+        } else {
+            clearSelection()
+            dragRows = [row]
+        }
+        draggingIDs = dragRows.compactMap { rows.indices.contains($0) ? rows[$0].block.id : nil }
+        guard !draggingIDs.isEmpty else { return }
+        let pbItem = NSPasteboardItem()
+        pbItem.setString(pageName, forType: Self.blockDragType)
+        let item = NSDraggingItem(pasteboardWriter: pbItem)
+        // Drag image: a snapshot of the pressed row.
+        if let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false),
+           let rep = cell.bitmapImageRepForCachingDisplay(in: cell.bounds) {
+            cell.cacheDisplay(in: cell.bounds, to: rep)
+            let image = NSImage(size: cell.bounds.size)
+            image.addRepresentation(rep)
+            item.setDraggingFrame(view.convert(cell.bounds, from: cell), contents: image)
+        } else {
+            item.setDraggingFrame(NSRect(x: 0, y: 0, width: 160, height: 20), contents: nil)
+        }
+        view.beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    /// Insertion path for a proposed drop, or nil when invalid. Between rows
+    /// (`.above`) inserts as the sibling before that row's block; onto a row
+    /// (`.on`) inserts as its first child. Drops into a dragged subtree are
+    /// rejected.
+    private func dropDestination(row: Int, operation: NSTableView.DropOperation) -> [Int]? {
+        let doc = app.document(for: pageName)
+        let draggedPaths = draggingIDs.compactMap { doc.blocks.path(to: $0) }
+        guard !draggedPaths.isEmpty, draggedPaths.count == draggingIDs.count else { return nil }
+        var dest: [Int]
+        if operation == .on {
+            guard rows.indices.contains(row),
+                  let targetPath = doc.blocks.path(to: rows[row].block.id) else { return nil }
+            dest = targetPath + [0]
+        } else if rows.indices.contains(row) {
+            guard let path = doc.blocks.path(to: rows[row].block.id) else { return nil }
+            dest = path
+        } else if let zoom, let zoomPath = doc.blocks.path(to: zoom) {
+            // Below the last row of a zoomed outline: append to the zoom root.
+            dest = zoomPath + [doc.blocks.block(at: zoomPath)?.children.count ?? 0]
+        } else {
+            dest = [doc.blocks.count]
+        }
+        for p in draggedPaths where dest.count >= p.count && Array(dest.prefix(p.count)) == p {
+            return nil
+        }
+        return dest
     }
 
     // MARK: - Commits
@@ -1039,6 +1116,9 @@ final class OutlineEditorController: NSObject {
             },
             pagePreview: { [weak self] name in
                 self?.previewAttributedString(forPage: name)
+            },
+            beginDrag: { [weak self] event, view in
+                self?.beginDragSession(for: id, event: event, from: view)
             }
         )
     }
@@ -1445,6 +1525,52 @@ extension OutlineEditorController: NSTableViewDataSource, NSTableViewDelegate {
                        textHeight + OutlineRowCell.verticalPadding * 2)
         }
         return OutlineRowCell.height(for: model.rendered, contentWidth: contentWidth)
+    }
+
+    // MARK: Drag and drop (SPEC §5.4)
+
+    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
+                   proposedRow row: Int,
+                   proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
+        // Same-outline moves only (v1): the dragged blocks live on this page.
+        guard (info.draggingSource as? OutlineEditorController) === self,
+              dropDestination(row: row, operation: operation) != nil else { return [] }
+        return .move
+    }
+
+    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo,
+                   row: Int, dropOperation operation: NSTableView.DropOperation) -> Bool {
+        guard (info.draggingSource as? OutlineEditorController) === self,
+              let dest = dropDestination(row: row, operation: operation) else { return false }
+        var doc = app.document(for: pageName)
+        let paths = draggingIDs.compactMap { doc.blocks.path(to: $0) }
+        guard paths.count == draggingIDs.count,
+              OutlineOps.move(paths, to: dest, in: &doc.blocks) else { return false }
+        // Dropping into a collapsed parent: expand it so the result is visible.
+        if operation == .on, rows.indices.contains(row),
+           let parentPath = doc.blocks.path(to: rows[row].block.id) {
+            doc.blocks.update(at: parentPath) { $0.collapsed = false }
+        }
+        let movedIDs = Set(draggingIDs)
+        commitStructural(doc, label: movedIDs.count == 1 ? "Move Block" : "Move Blocks")
+        clearSelection()
+        reloadAndFocus(nil, selection: nil)
+        let newSelection = Set(rows.indices.filter { movedIDs.contains(rows[$0].block.id) })
+        if !newSelection.isEmpty { setSelection(newSelection, anchor: newSelection.min()) }
+        return true
+    }
+}
+
+extension OutlineEditorController: NSDraggingSource {
+
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint,
+                         operation: NSDragOperation) {
+        draggingIDs = []
     }
 }
 

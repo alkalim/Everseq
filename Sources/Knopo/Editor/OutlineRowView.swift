@@ -15,6 +15,8 @@ struct OutlineRowCallbacks {
     var selectBlock: (_ extend: Bool, _ toggle: Bool) -> Void = { _, _ in }
     /// Renders a page's first ~10 blocks for the hover preview (SPEC §6.1).
     var pagePreview: (String) -> NSAttributedString? = { _ in nil }
+    /// Bullet drag: starts a block-move drag session (event, source view).
+    var beginDrag: (NSEvent, NSView) -> Void = { _, _ in }
 }
 
 /// One outline row (SPEC §5.4): indentation by depth, fold triangle, bullet
@@ -86,6 +88,10 @@ final class OutlineRowCell: NSTableCellView {
         bullet.onContextMenu = { [weak self] event in
             guard let self else { return }
             self.callbacks.showContextMenu(event, self.bullet)
+        }
+        bullet.onBeginDrag = { [weak self] event in
+            guard let self else { return }
+            self.callbacks.beginDrag(event, self.bullet)
         }
         addSubview(bullet)
 
@@ -715,6 +721,10 @@ final class BulletView: NSView {
     }
     var onClick: () -> Void = {}
     var onContextMenu: (NSEvent) -> Void = { _ in }
+    /// Dragging the bullet moves the block (SPEC §5.4). Receives the original
+    /// mouse-down event so the drag session anchors to the press point.
+    var onBeginDrag: (NSEvent) -> Void = { _ in }
+    private var pressEvent: NSEvent?
 
     /// Dot diameter, scaled with the text size (zoom) so the bullet doesn't look
     /// tiny next to large text. ~5px at the default size.
@@ -742,7 +752,25 @@ final class BulletView: NSView {
         NSBezierPath(ovalIn: dot).fill()
     }
 
+    // Click vs drag: the click (zoom) fires on mouse-up so a small movement
+    // threshold can promote the press into a block drag instead.
     override func mouseDown(with event: NSEvent) {
+        pressEvent = event
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let press = pressEvent else { return }
+        let dx = event.locationInWindow.x - press.locationInWindow.x
+        let dy = event.locationInWindow.y - press.locationInWindow.y
+        if dx * dx + dy * dy >= 9 { // ~3pt travel
+            pressEvent = nil
+            onBeginDrag(press)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard pressEvent != nil else { return }
+        pressEvent = nil
         onClick()
     }
 
