@@ -18,6 +18,8 @@ protocol BlockEditorActions: AnyObject {
     func editorFocusAdjacent(by delta: Int)
     func editorCopySubtreeMarkdown() -> String?
     func editorPasteBlocks(_ text: String)
+    func editorImportImageAssets(_ fileURLs: [URL]) -> String?
+    func editorImportPastedImage(png data: Data) -> String?
     func editorFocusLost()
 }
 
@@ -69,6 +71,47 @@ final class BlockEditorTextView: NSTextView {
         isVerticallyResizable = true
         maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                          height: CGFloat.greatestFiniteMagnitude)
+    }
+
+    /// Keep file drops on the outline table, which inserts each image as a new
+    /// block at the drop point. Ordinary string drags still edit this block.
+    override func updateDragTypeRegistration() {
+        registerForDraggedTypes([.string])
+    }
+
+    /// AppKit validates Edit > Paste against this list before dispatching the
+    /// action. A plain-text NSTextView omits bitmap types, which otherwise makes
+    /// Cmd+V a no-op for image-only clipboards before `paste(_:)` can run.
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        var types = super.readablePasteboardTypes
+        for type in [NSPasteboard.PasteboardType.fileURL, .png, .tiff]
+            where !types.contains(type) {
+            types.append(type)
+        }
+        return types
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        let pasteActions: Set<Selector> = [
+            #selector(paste(_:)),
+            #selector(pasteAsPlainText(_:)),
+            #selector(pasteAsRichText(_:)),
+        ]
+        if let action = item.action, pasteActions.contains(action), isEditable,
+           hasImagePasteboardContent {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    private var hasImagePasteboardContent: Bool {
+        let pasteboard = NSPasteboard.general
+        let hasFileURL = pasteboard.canReadObject(
+            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+        )
+        let hasBitmap = pasteboard.string(forType: .string) == nil
+            && pasteboard.availableType(from: [.png, .tiff]) != nil
+        return hasFileURL || hasBitmap
     }
 
     // MARK: - Context menu
@@ -359,15 +402,53 @@ final class BlockEditorTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
+        if pasteKnopoContent() { return }
+        super.paste(sender)
+    }
+
+    /// Plain-text text views can receive Cmd+V through this selector instead of
+    /// `paste(_:)`. Keep both responder paths behaviorally identical.
+    override func pasteAsPlainText(_ sender: Any?) {
+        if pasteKnopoContent() { return }
+        super.pasteAsPlainText(sender)
+    }
+
+    /// Handles Knopo's structured/image clipboard forms. Returns false for an
+    /// ordinary single-line string so AppKit can perform its normal paste.
+    private func pasteKnopoContent() -> Bool {
+        let pasteboard = NSPasteboard.general
+        let fileURLs = pasteboard.readObjects(
+            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+        )?.compactMap { ($0 as? NSURL).map { $0 as URL } } ?? []
+        if !fileURLs.isEmpty,
+           let markdown = actions?.editorImportImageAssets(fileURLs) {
+            insertText(markdown, replacementRange: selectedRange())
+            return true
+        }
         // Inside a code block, multi-line text stays in the block verbatim —
         // splitting it would let lines "escape" the fence (§5.5.1).
-        if let text = NSPasteboard.general.string(forType: .string),
+        if let text = pasteboard.string(forType: .string),
            text.contains("\n"),
            !BlockKind.caretInsideFence(string, utf16Caret: selectedRange().location) {
             actions?.editorPasteBlocks(text)
-            return
+            return true
         }
-        super.paste(sender)
+        if pasteboard.string(forType: .string) == nil {
+            let png: Data?
+            if let data = pasteboard.data(forType: .png) {
+                png = data
+            } else if let data = pasteboard.data(forType: .tiff),
+                      let bitmap = NSBitmapImageRep(data: data) {
+                png = bitmap.representation(using: .png, properties: [:])
+            } else {
+                png = nil
+            }
+            if let png, let markdown = actions?.editorImportPastedImage(png: png) {
+                insertText(markdown, replacementRange: selectedRange())
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Change notifications

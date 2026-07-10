@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import KnopoCore
+import UniformTypeIdentifiers
 
 /// The outline editor (SPEC §5.4, §15): an AppKit NSTableView whose rows are
 /// the visible blocks. The focused block edits raw Markdown in one shared
@@ -85,9 +86,21 @@ final class OutlineTableView: NSTableView {
     var onWidthChange: (() -> Void)?
     /// Returns true if the controller consumed the key (node-selection mode).
     var onKeyDown: ((NSEvent) -> Bool)?
+    /// A drag left the table (or ended without a drop) — cancels spring-loading.
+    var onDragExited: (() -> Void)?
     private var lastLayoutWidth: CGFloat = -1
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        onDragExited?()
+        super.draggingExited(sender)
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        onDragExited?()
+        super.draggingEnded(sender)
+    }
 
     override func keyDown(with event: NSEvent) {
         if onKeyDown?(event) == true { return }
@@ -166,6 +179,11 @@ final class OutlineEditorController: NSObject {
     /// alone (same page), so ids never round-trip through the pasteboard.
     static let blockDragType = NSPasteboard.PasteboardType("com.knopo.block-drag")
     private var draggingIDs: [UUID] = []
+    /// Spring-loading (Finder-style): a drag hovering over a collapsed row for
+    /// a moment expands it, so the drop can land *inside*. The pending target
+    /// is tracked by block id (row indices shift when rows expand).
+    private var springBlockID: UUID?
+    private var springWork: DispatchWorkItem?
 
     // Node selection (SPEC §13): block-level multi-select when not editing.
     private var selectedRows: Set<Int> = []
@@ -209,7 +227,8 @@ final class OutlineEditorController: NSObject {
         tableView.delegate = self
         tableView.onWidthChange = { [weak self] in self?.widthDidChange() }
         tableView.onKeyDown = { [weak self] in self?.handleSelectionKeyDown($0) ?? false }
-        tableView.registerForDraggedTypes([Self.blockDragType])
+        tableView.onDragExited = { [weak self] in self?.cancelSpringLoad() }
+        tableView.registerForDraggedTypes([Self.blockDragType, .fileURL])
     }
 
     private func setUpAutocomplete() {
@@ -235,6 +254,8 @@ final class OutlineEditorController: NSObject {
         }
         // `/link`: open the two-field panel at the caret (§5.5.2).
         autocomplete.onLinkCommand = { [weak self] in self?.presentLinkPanel() }
+        // `/image`: open the image file picker at the caret (§5.5.5).
+        autocomplete.onImageCommand = { [weak self] in self?.presentImagePicker() }
         // `/date`: open the calendar at the caret (§5.5.4).
         autocomplete.onDateCommand = { [weak self] in self?.presentDatePicker() }
     }
@@ -258,6 +279,30 @@ final class OutlineEditorController: NSObject {
             self.editor.insertText(markdown, replacementRange: NSRange(location: loc, length: 0))
             self.editor.setSelectedRange(
                 NSRange(location: loc + (markdown as NSString).length, length: 0))
+        }
+    }
+
+    /// Opens an image-only file sheet; selected files are copied into assets/
+    /// and inserted where the `/image` trigger was removed.
+    private func presentImagePicker() {
+        guard focusedBlockID != nil, let window = tableView.window else { return }
+        let caret = editor.selectedRange().location
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        suppressFocusLoss = true
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            self.suppressFocusLoss = false
+            self.tableView.window?.makeFirstResponder(self.editor)
+            guard response == .OK,
+                  let markdown = self.editorImportImageAssets(panel.urls) else { return }
+            let loc = min(caret, (self.editor.string as NSString).length)
+            self.editor.setSelectedRange(NSRange(location: loc, length: 0))
+            self.editor.insertText(markdown,
+                                   replacementRange: NSRange(location: loc, length: 0))
         }
     }
 
@@ -1035,32 +1080,70 @@ final class OutlineEditorController: NSObject {
         view.beginDraggingSession(with: [item], event: event, source: self)
     }
 
-    /// Insertion path for a proposed drop, or nil when invalid. Between rows
+    /// Insertion path for a proposed drop. Between rows
     /// (`.above`) inserts as the sibling before that row's block; onto a row
-    /// (`.on`) inserts as its first child. Drops into a dragged subtree are
-    /// rejected.
-    private func dropDestination(row: Int, operation: NSTableView.DropOperation) -> [Int]? {
-        let doc = app.document(for: pageName)
-        let draggedPaths = draggingIDs.compactMap { doc.blocks.path(to: $0) }
-        guard !draggedPaths.isEmpty, draggedPaths.count == draggingIDs.count else { return nil }
-        var dest: [Int]
+    /// (`.on`) inserts as its first child.
+    private func insertionPath(row: Int, operation: NSTableView.DropOperation,
+                               in doc: PageDocument) -> [Int]? {
         if operation == .on {
             guard rows.indices.contains(row),
                   let targetPath = doc.blocks.path(to: rows[row].block.id) else { return nil }
-            dest = targetPath + [0]
+            return targetPath + [0]
         } else if rows.indices.contains(row) {
-            guard let path = doc.blocks.path(to: rows[row].block.id) else { return nil }
-            dest = path
+            return doc.blocks.path(to: rows[row].block.id)
         } else if let zoom, let zoomPath = doc.blocks.path(to: zoom) {
             // Below the last row of a zoomed outline: append to the zoom root.
-            dest = zoomPath + [doc.blocks.block(at: zoomPath)?.children.count ?? 0]
+            return zoomPath + [doc.blocks.block(at: zoomPath)?.children.count ?? 0]
         } else {
-            dest = [doc.blocks.count]
+            return [doc.blocks.count]
         }
+    }
+
+    /// Internal block-move destination, rejecting drops into dragged subtrees.
+    private func dropDestination(row: Int, operation: NSTableView.DropOperation) -> [Int]? {
+        let doc = app.document(for: pageName)
+        let draggedPaths = draggingIDs.compactMap { doc.blocks.path(to: $0) }
+        guard !draggedPaths.isEmpty, draggedPaths.count == draggingIDs.count,
+              let dest = insertionPath(row: row, operation: operation, in: doc) else { return nil }
         for p in draggedPaths where dest.count >= p.count && Array(dest.prefix(p.count)) == p {
             return nil
         }
         return dest
+    }
+
+    /// Called from every `validateDrop` proposal. Hovering `.on` a collapsed
+    /// row for a moment expands it mid-drag (Finder folder spring-loading), so
+    /// the drop can land inside; moving the proposal elsewhere cancels the
+    /// pending expansion. Expand-on-drop remains the fallback for a drop that
+    /// lands before the spring fires.
+    private func updateSpringLoad(row: Int, operation: NSTableView.DropOperation) {
+        let target: UUID? = (operation == .on && rows.indices.contains(row)
+            && rows[row].block.collapsed) ? rows[row].block.id : nil
+        guard target != springBlockID else { return }
+        cancelSpringLoad()
+        guard let target else { return }
+        springBlockID = target
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.springBlockID == target else { return }
+            self.springBlockID = nil
+            self.toggleFold(target)
+        }
+        springWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+    }
+
+    private func cancelSpringLoad() {
+        springWork?.cancel()
+        springWork = nil
+        springBlockID = nil
+    }
+
+    private func imageFileURLs(from pasteboard: NSPasteboard) -> [URL]? {
+        let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+        )?.compactMap { ($0 as? NSURL).map { $0 as URL } }
+            .filter(GraphStore.isImageFile) ?? []
+        return urls.isEmpty ? nil : urls
     }
 
     // MARK: - Commits
@@ -1532,16 +1615,55 @@ extension OutlineEditorController: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
                    proposedRow row: Int,
                    proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
-        // Same-outline moves only (v1): the dragged blocks live on this page.
-        guard (info.draggingSource as? OutlineEditorController) === self,
-              dropDestination(row: row, operation: operation) != nil else { return [] }
-        return .move
+        if (info.draggingSource as? OutlineEditorController) === self {
+            guard dropDestination(row: row, operation: operation) != nil else {
+                updateSpringLoad(row: -1, operation: .above)
+                return []
+            }
+            updateSpringLoad(row: row, operation: operation)
+            return .move
+        }
+        let doc = app.document(for: pageName)
+        guard imageFileURLs(from: info.draggingPasteboard) != nil,
+              insertionPath(row: row, operation: operation, in: doc) != nil else {
+            updateSpringLoad(row: -1, operation: .above)
+            return []
+        }
+        updateSpringLoad(row: row, operation: operation)
+        return .copy
     }
 
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo,
                    row: Int, dropOperation operation: NSTableView.DropOperation) -> Bool {
-        guard (info.draggingSource as? OutlineEditorController) === self,
-              let dest = dropDestination(row: row, operation: operation) else { return false }
+        cancelSpringLoad()
+        if (info.draggingSource as? OutlineEditorController) !== self {
+            guard let fileURLs = imageFileURLs(from: info.draggingPasteboard) else { return false }
+            var doc = app.document(for: pageName)
+            guard let dest = insertionPath(row: row, operation: operation, in: doc) else {
+                return false
+            }
+            let blocks = fileURLs.compactMap { url -> Block? in
+                guard let name = try? app.store.importAsset(from: url) else { return nil }
+                return Block(content: GraphStore.imageMarkdown(assetNamed: name))
+            }
+            guard !blocks.isEmpty else { return false }
+            for (offset, block) in blocks.enumerated() {
+                var path = dest
+                path[path.count - 1] += offset
+                doc.blocks.insert(block, at: path)
+            }
+            // Dropping into a collapsed parent: expand it so the result is visible.
+            if operation == .on, rows.indices.contains(row),
+               let parentPath = doc.blocks.path(to: rows[row].block.id) {
+                doc.blocks.update(at: parentPath) { $0.collapsed = false }
+            }
+            commitStructural(doc, label: blocks.count == 1 ? "Insert Image" : "Insert Images")
+            clearSelection()
+            reloadAndFocus(nil, selection: nil)
+            return true
+        }
+
+        guard let dest = dropDestination(row: row, operation: operation) else { return false }
         var doc = app.document(for: pageName)
         let paths = draggingIDs.compactMap { doc.blocks.path(to: $0) }
         guard paths.count == draggingIDs.count,
@@ -1752,6 +1874,26 @@ extension OutlineEditorController: BlockEditorActions {
         commitStructural(doc, label: "Paste") // one undo step (SPEC §13)
         let caret = (last.content as NSString).length
         reloadAndFocus(last.id, selection: NSRange(location: caret, length: 0))
+    }
+
+    func editorImportImageAssets(_ fileURLs: [URL]) -> String? {
+        let markdown = fileURLs.compactMap { url -> String? in
+            guard GraphStore.isImageFile(url),
+                  let name = try? app.store.importAsset(from: url) else { return nil }
+            return GraphStore.imageMarkdown(assetNamed: name)
+        }
+        return markdown.isEmpty ? nil : markdown.joined(separator: " ")
+    }
+
+    func editorImportPastedImage(png data: Data) -> String? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let preferredName = "pasted-\(formatter.string(from: Date())).png"
+        guard let name = try? app.store.saveAsset(data, preferredName: preferredName) else {
+            return nil
+        }
+        return GraphStore.imageMarkdown(assetNamed: name, alt: "image")
     }
 
     func editorFocusLost() {

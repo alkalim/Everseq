@@ -168,6 +168,25 @@ import Foundation
         expectEqual(blocks[1].children.map(\.content), ["a1"])
     }
 
+    @Test func insertIntoCollapsedParentAndExpand() {
+        // The drop-on-a-collapsed-block flow: insert as first child, then
+        // expand the parent so the result is visible. Guards the invariant the
+        // outline's acceptDrop relies on, through serialization.
+        var blocks = forest("- p\n  collapsed:: true\n  - c\n- b\n")
+        expectTrue(blocks[0].collapsed)
+        blocks.insert(Block(content: "![img](../assets/img.png)"), at: [0, 0])
+        blocks.update(at: [0]) { $0.collapsed = false }
+
+        expectEqual(OutlineOps.visibleRows(in: blocks).map(\.block.content),
+                    ["p", "![img](../assets/img.png)", "c", "b"])
+        // Survives a save/load cycle: collapsed:: is gone, the child persists.
+        let reparsed = PageParser.parse(
+            PageSerializer.serialize(preamble: "", blocks: blocks))
+        expectFalse(reparsed.blocks[0].collapsed)
+        expectEqual(reparsed.blocks[0].children.map(\.content),
+                    ["![img](../assets/img.png)", "c"])
+    }
+
     @Test func moveToLiftsChildToTopLevel() {
         var blocks = forest("- a\n  - a1\n  - a2\n- b\n")
         expectTrue(OutlineOps.move([[0, 1]], to: [1], in: &blocks))

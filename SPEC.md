@@ -106,12 +106,14 @@ There is no tag entity to open as a document, no tag content, no tag properties.
     Projects%2FOutliner.md        // '/' percent-encoded in filenames
   journals/
     2026-06-10.md
+  assets/                          // images; created on demand
   .knopo/
     config.json                   // favourites, settings
     cache.db                      // rebuildable index (SQLite); safe to delete
 ```
 
 - One page = one file. Filename = page display name with filesystem-unsafe characters percent-encoded.
+- Relative image sources (`![alt](src)`) resolve against `assets/`. Knopo *emits* the `../assets/<file>` form — relative to the page file, which is how Logseq, GitHub, and Obsidian resolve it — so pages stay portable; both forms are read. Imported filenames replace spaces with `_` (CommonMark forbids spaces in a link destination); name collisions use readable `-1`, `-2`, … suffixes; deleting a block does not delete its asset (there is no asset garbage collection in v1).
 - `cache.db` holds the block/reference/tag index and recent-pages list. It is a **cache**: deleting it loses nothing except recents; the app rebuilds it from the Markdown files on next start.
 - `config.json` holds favourites and user settings. It is authoritative (not rebuildable) and should be committed/backed up along with pages.
 
@@ -187,6 +189,7 @@ Tables (GitHub style) render read-only inside a block; editing happens in raw so
 - Typing a formatting marker over a **selection** wraps it instead of replacing it: `[`, `` ` ``, `*`, `~`, `=`, `$` surround the selected text, which stays selected — pressing the key again doubles the marker (`[` `[` → `[[Page]]`, `*` `*` → `**bold**`).
 - Clicking a bullet **zooms** into that block (it becomes the temporary page root, with a breadcrumb back). Clicking the fold triangle toggles `collapsed`. An empty leaf block hides its bullet while unfocused (the gutter is kept, so nothing shifts).
 - **Dragging a bullet** moves the block (with subtree): dropping between rows inserts it as the sibling before the row below the gap; dropping onto a row inserts it as that block's first child (expanding it if collapsed). Dragging a bullet inside the node selection moves the whole selection; drops into a dragged subtree are rejected. Blocks keep their ids across drops, so block references stay intact. Same-page only for now.
+- **Dragging image files from Finder** copies them into `assets/` and inserts one `![name](file)` block per image using the same drop geometry as bullet drags; dropping onto a collapsed block expands it. Hovering any drag over a collapsed block for a moment **spring-loads** it open (like Finder folders), so the drop can target the blocks inside. Pasting copied image files inserts their Markdown at the caret. Pasting bitmap data does the same only when the clipboard has no text, so text remains the preferred paste representation.
 
 ### 5.5 Slash commands
 
@@ -201,6 +204,7 @@ All commands are one undo step together with the keystrokes of the current edit 
 | `/quote` | prefixes the block with `> ` (block-level quote, §5.2); no-op if the prefix is already present |
 | `/code-block` | inserts a fenced code block skeleton (§5.5.1) |
 | `/link` | inserts a Markdown link skeleton (§5.5.2) |
+| `/image` | opens an image picker and inserts image Markdown (§5.5.5) |
 | `/page-embed`, `/block-embed` | inserts a `{{embed [[…]]}}` / `{{embed ((…))}}` skeleton and opens the page / block picker inside it (§5.5.3, §7.6) |
 | `/query` | inserts a `{{query …}}` skeleton with the caret inside, ready to type a filter (§17) |
 
@@ -243,14 +247,20 @@ All commands are one undo step together with the keystrokes of the current edit 
 - On confirm, `[[<ISO date>]]` for the chosen day is inserted at the trigger position (the same stable ISO form `/today` uses, §10), so it renders as the pretty date title and links to that journal page. On cancel, nothing is inserted.
 - This is what makes `/date` reference *any* day rather than only today; free-form natural-language date entry ("next friday") remains deferred.
 
-Acceptance criteria for §5.5.1–5.5.4:
+#### 5.5.5 `/image`
+
+- Committing the command removes the trigger and opens a window-modal file sheet restricted to images. Multiple files may be selected.
+- Confirming copies the selected files into `assets/` and inserts their Markdown at the trigger position. Cancel inserts nothing; in both cases focus and the caret return to the edited block.
+
+Acceptance criteria for §5.5.1–5.5.5:
 
 1. In an empty block, `/code-block` + `Enter` yields a block whose content is `` ```\n\n``` `` with the caret after the opening backticks; typing `swift`, `Enter`, `let x = 1` produces a rendered Swift code block when focus leaves.
 2. `Enter` with the caret inside the fence inserts newlines; `Enter` after the closing fence creates a sibling block.
 3. `/link` opens the panel with focus in Label; with `https://example.org` on the clipboard the URL field is pre-filled. Label "docs" + Enter inserts `[docs](https://example.org)` with the caret after `)`. Empty label inserts the URL as label. Esc inserts nothing.
 4. `/block-embed` + selecting a block via the inner search yields exactly `{{embed ((<uuid>))}}` (no doubled `))`), which renders as a read-only transclusion of that block's subtree (§7.6); `/page-embed` + selecting "Foo" yields `{{embed [[Foo]]}}`.
 5. `/date` opens the calendar; picking June 10 2026 inserts `[[2026-06-10]]` (rendering as "Jun 10th, 2026"); `Esc` inserts nothing.
-6. All commands replace the typed trigger text exactly (no stray `/`), participate in the edit session's undo step, and round-trip byte-stably like any block content (§4.2).
+6. `/image` opens an image-only multi-select sheet; confirming inserts each selected image at the trigger position, while cancelling inserts nothing and restores editor focus.
+7. All commands replace the typed trigger text exactly (no stray `/`), participate in the edit session's undo step, and round-trip byte-stably like any block content (§4.2).
 
 ### 5.6 Block background colors
 
@@ -420,6 +430,7 @@ The reference index updates incrementally on every block commit (debounced ~300 
 
 - **Undo/redo** is per-session, global, and crosses block boundaries (a page rename or a multi-block paste is one undo step).
 - **Copy** of a selected block subtree puts Markdown (with indentation) on the clipboard; **paste** of multi-line Markdown splits into blocks by list structure, or by lines if no list markers present.
+- **Image paste** imports the file or bitmap into `assets/` and inserts its Markdown at the caret. Undo removes the Markdown edit, but imported asset files remain.
 - **Delete page** moves its file to the OS trash. Incoming `[[refs]]` now point to a stub; incoming `((refs))` become broken (§7.3) after the confirmation prompt (§7.4) — the prompt aggregates counts for the whole page.
 - **Selection**: `Esc` from text editing selects the block (node selection); arrows extend selection across siblings; `Tab`/indent, move, delete then operate on the whole selection.
 

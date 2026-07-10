@@ -28,6 +28,8 @@ final class AutocompleteController: NSObject {
         case commandInsertCaret(label: String, text: String, caretOffset: Int, hint: String)
         /// Opens the two-field link panel (§5.5.2); inserts nothing itself.
         case commandLink(label: String, hint: String)
+        /// Opens the image file picker; inserts nothing itself.
+        case commandImage(label: String, hint: String)
         /// Opens the graphical date picker (§5.5.4); inserts nothing itself.
         case commandDatePicker(label: String, hint: String)
     }
@@ -41,6 +43,9 @@ final class AutocompleteController: NSObject {
     /// Called when `/link` is committed (trigger already removed); the host
     /// opens the link panel at the current caret (§5.5.2).
     var onLinkCommand: () -> Void = {}
+    /// Called when `/image` is committed (trigger already removed); the host
+    /// opens an image file picker at the current caret (§5.5.5).
+    var onImageCommand: () -> Void = {}
     /// Called when `/date` is committed (trigger already removed); the host
     /// opens the date picker at the current caret (§5.5.4).
     var onDateCommand: () -> Void = {}
@@ -228,6 +233,9 @@ final class AutocompleteController: NSObject {
             if matches("link") {
                 out.append(.commandLink(label: "/link", hint: "insert link"))
             }
+            if matches("image") {
+                out.append(.commandImage(label: "/image", hint: "insert image"))
+            }
             // Read-only transclusions (§7.6). Both insert a skeleton and drop
             // the caret inside the inner brackets so the page / block picker
             // opens right away; the trailing close brackets are absorbed on
@@ -324,7 +332,7 @@ final class AutocompleteController: NSObject {
             // skeleton), re-run detection so the page / block picker opens.
             textDidChange(in: textView)
             return
-        case .commandLink, .commandDatePicker:
+        case .commandLink, .commandImage, .commandDatePicker:
             // Remove the trigger; the host opens the relevant panel at the caret.
             let caret = textView.selectedRange().location
             let replaceRange = NSRange(
@@ -332,7 +340,11 @@ final class AutocompleteController: NSObject {
             )
             dismiss()
             textView.insertText("", replacementRange: replaceRange)
-            if case .commandDatePicker = item { onDateCommand() } else { onLinkCommand() }
+            switch item {
+            case .commandDatePicker: onDateCommand()
+            case .commandImage: onImageCommand()
+            default: onLinkCommand()
+            }
             return
         }
         let caret = textView.selectedRange().location
@@ -530,6 +542,7 @@ extension AutocompleteController: NSTableViewDataSource, NSTableViewDelegate {
         case .commandPrefix(let label, _, let hint),
              .commandInsertCaret(let label, _, _, let hint),
              .commandLink(let label, let hint),
+             .commandImage(let label, let hint),
              .commandDatePicker(let label, let hint):
             let out = NSMutableAttributedString(string: label, attributes: [
                 .font: mainFont, .foregroundColor: NSColor.labelColor,
