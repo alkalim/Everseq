@@ -31,8 +31,8 @@ struct MainWindow: View {
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
                         if nav.findActive {
-                            FindBar()
-                            Divider()
+                            VStack(spacing: 0) { FindBar(); Divider() }
+                                .transition(.move(edge: .top).combined(with: .opacity))
                         }
                         mainContent
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -45,6 +45,7 @@ struct MainWindow: View {
                                 light: .textBackgroundColor, dark: .windowBackgroundColor)))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(.easeOut(duration: 0.18), value: nav.findActive)
                     if !nav.rightPanes.isEmpty {
                         resizeHandle(available: geo.size.width)
                         RightSidebar()

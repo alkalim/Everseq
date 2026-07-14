@@ -41,6 +41,8 @@ final class Navigator: ObservableObject {
     /// Bumped to request a step; the controller reads `findStepForward`.
     @Published var findStepToken = 0
     private(set) var findStepForward = true
+    /// Bumped by `openFind()` to (re)focus and select the find field.
+    @Published var findFocusToken = 0
 
     /// Aggregates in-page find across every outline in this window (the
     /// journal home has several).
@@ -176,12 +178,17 @@ final class Navigator: ObservableObject {
     // MARK: - In-page find
 
     func openFind() {
-        // Release a live block editor (an NSTextView first responder) so the
-        // find field can take focus — otherwise the field appears but the caret
-        // stays in the block. Committing that block's edit is expected: Cmd+F
-        // moves you to the search field (Esc returns).
-        NSApp.keyWindow?.makeFirstResponder(nil)
-        findActive = true
+        if !findActive {
+            // Release a live block editor (an NSTextView first responder) so the
+            // find field can take focus — otherwise the field appears but the
+            // caret stays in the block. Committing that block's edit is expected:
+            // Cmd+F moves you to the search field (Esc returns).
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            findActive = true
+        }
+        // Always (re)focus the field and select its text — a repeat Cmd+F after
+        // navigating to a match returns focus to the search field.
+        findFocusToken += 1
     }
 
     func closeFind() {

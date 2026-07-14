@@ -199,6 +199,10 @@ final class OutlineEditorController: NSObject {
     private var findMatches: [(row: Int, range: NSRange)] = []
     /// Index into `findMatches` that is the window-global current match, or nil.
     private var findCurrentLocal: Int?
+    /// Rows currently carrying highlight, and the row of the emphasized current
+    /// match — tracked so find can reload only the rows whose highlight changed.
+    private var findRows: Set<Int> = []
+    private var findCurrentRow: Int?
 
     init(app: AppState, nav: Navigator) {
         self.app = app
@@ -1512,6 +1516,7 @@ extension OutlineEditorController: FindParticipant {
         findActive = !query.isEmpty
         findQuery = query
         findCurrentLocal = nil
+        let previouslyHighlighted = findRows
         findMatches = []
         if !query.isEmpty {
             for (i, row) in rows.enumerated() {
@@ -1527,15 +1532,30 @@ extension OutlineEditorController: FindParticipant {
                 }
             }
         }
-        tableView.reloadData()
+        findRows = Set(findMatches.map(\.row))
+        findCurrentRow = nil
+        // Only rows whose highlight changed need re-rendering — a full reload on
+        // every keystroke re-renders the whole page and makes typing crawl.
+        reloadFindRows(previouslyHighlighted.union(findRows))
         return findMatches.count
     }
 
     func findSetCurrent(_ localIndex: Int?) {
         findCurrentLocal = localIndex
-        tableView.reloadData()
-        if let localIndex, findMatches.indices.contains(localIndex) {
-            tableView.scrollRowToVisible(findMatches[localIndex].row)
+        let newCurrentRow = localIndex.flatMap {
+            findMatches.indices.contains($0) ? findMatches[$0].row : nil
+        }
+        // Re-render only the old and new current rows (the emphasized match), not
+        // the whole table.
+        reloadFindRows(Set([findCurrentRow, newCurrentRow].compactMap { $0 }))
+        findCurrentRow = newCurrentRow
+        if let newCurrentRow {
+            // Defer: the just-reloaded row's rect is briefly stale, so scrolling
+            // immediately can land short (notably in the journal's shared scroll).
+            DispatchQueue.main.async { [weak self] in
+                guard let self, newCurrentRow < self.tableView.numberOfRows else { return }
+                self.tableView.scrollRowToVisible(newCurrentRow)
+            }
         }
     }
 
@@ -1544,7 +1564,18 @@ extension OutlineEditorController: FindParticipant {
         findQuery = ""
         findMatches = []
         findCurrentLocal = nil
-        tableView.reloadData()
+        let previouslyHighlighted = findRows
+        findRows = []
+        findCurrentRow = nil
+        reloadFindRows(previouslyHighlighted)
+    }
+
+    /// Reloads just the given rows' cells (skips out-of-range indexes). Find
+    /// highlighting never changes text length, so row heights are unaffected.
+    private func reloadFindRows(_ indexes: Set<Int>) {
+        let valid = IndexSet(indexes.filter { $0 >= 0 && $0 < tableView.numberOfRows })
+        guard !valid.isEmpty else { return }
+        tableView.reloadData(forRowIndexes: valid, columnIndexes: IndexSet(integer: 0))
     }
 }
 
