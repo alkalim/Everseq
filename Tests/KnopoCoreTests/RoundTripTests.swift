@@ -143,6 +143,11 @@ import Foundation
         assertRoundTrip("- {{query (and [[a]] [[b]])}}\n")
     }
 
+    @Test func bareURLRoundTripsLiterally() {
+        // Autolinks are a display interpretation; the raw source is untouched.
+        assertRoundTrip("- see https://example.com/a_(b) and http://x.y/z?q=1#f\n")
+    }
+
     @Test func imageSizeSyntaxRoundTripsLiterally() {
         assertRoundTrip("""
         - ![pipe|363](../assets/pipe.png)

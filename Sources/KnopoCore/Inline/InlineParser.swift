@@ -20,6 +20,10 @@ public indirect enum InlineNode: Equatable, Sendable {
     case code(String)
     case math(String)
     case link(label: String, url: String)
+    /// A bare `http(s)://…` URL written without `[…](…)` — shown as itself and
+    /// clickable (opens externally). Distinct from `.link` so it never falls
+    /// back to internal page navigation. (SPEC §5.1)
+    case autolink(String)
     case image(alt: String, src: String, size: ImageSize? = nil)
     case pageRef(String)
     case blockRef(UUID)
@@ -274,6 +278,35 @@ public enum InlineParser {
             c.isLetter || c.isNumber || c == "-" || c == "_"
         }
 
+        /// End index of a bare `http(s)://…` URL starting at `from`, or nil if
+        /// there isn't one. The run stops at whitespace / `<` / `>` / backtick,
+        /// then sheds trailing sentence punctuation and an unbalanced `)` — so
+        /// `(see https://x.com/a_(b)).` links `https://x.com/a_(b)`, not the
+        /// trailing `).`. (GFM-style autolink.)
+        func autolinkEnd(from: Int) -> Int? {
+            let rest = String(chars[from...]).lowercased()
+            let scheme = rest.hasPrefix("https://") ? 8 : (rest.hasPrefix("http://") ? 7 : 0)
+            guard scheme > 0 else { return nil }
+            var end = from + scheme
+            while end < chars.count, !chars[end].isWhitespace, !"<>`".contains(chars[end]) {
+                end += 1
+            }
+            guard end > from + scheme else { return nil } // need a host
+            trim: while end > from + scheme {
+                switch chars[end - 1] {
+                case ".", ",", ";", ":", "!", "?", "'", "\"":
+                    end -= 1
+                case ")":
+                    let opens = chars[from..<end].lazy.filter { $0 == "(" }.count
+                    let closes = chars[from..<end].lazy.filter { $0 == ")" }.count
+                    if closes > opens { end -= 1 } else { break trim }
+                default:
+                    break trim
+                }
+            }
+            return end > from + scheme ? end : nil
+        }
+
         while i < chars.count {
             let c = chars[i]
             let prev: Character? = i > 0 ? chars[i - 1] : nil
@@ -445,6 +478,19 @@ public enum InlineParser {
                     literal.append(c); i += 1
                 }
 
+            case "h", "H":
+                // A bare URL must start the text or follow whitespace / opening
+                // punctuation, so `foohttp://x` and `…#http` don't linkify.
+                let boundaryOK = prev == nil || prev!.isWhitespace
+                    || "([{<'\"".contains(prev!)
+                if boundaryOK, let end = autolinkEnd(from: i) {
+                    flush()
+                    nodes.append(.autolink(slice(i, end)))
+                    i = end
+                } else {
+                    literal.append(c); i += 1
+                }
+
             default:
                 literal.append(c); i += 1
             }
@@ -490,6 +536,7 @@ public enum InlineParser {
                 return plainText(n)
             case .code(let s), .math(let s): return s
             case .link(let label, _): return label
+            case .autolink(let url): return url
             case .image(let alt, _, _): return alt
             case .pageRef(let name): return name
             case .blockRef: return "(…)"

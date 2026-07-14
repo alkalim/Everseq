@@ -500,6 +500,19 @@ enum BlockRenderer {
                     .foregroundColor: NSColor.linkColor,
                     .font: NSFont.systemFont(ofSize: font.pointSize - 2),
                 ])))
+            case .autolink(let url):
+                // A bare URL: shown as itself, clickable, always external — no
+                // `↗` (the URL is self-evidently a link) and never the internal
+                // page fallback. `%`-encode so an unusual char can't nil the URL.
+                let dest = URL(string: url)
+                    ?? url.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed)
+                        .flatMap(URL.init(string:))
+                var linkAttrs: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: NSColor.linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                ]
+                if let dest { linkAttrs[.link] = dest }
+                out.append(NSAttributedString(string: url, attributes: attrs(linkAttrs)))
             case .image(let alt, let src, let size):
                 let index = imageIndex
                 imageIndex += 1

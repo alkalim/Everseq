@@ -151,6 +151,7 @@ Rules:
 | `` `code` `` | inline code |
 | `==highlight==` | highlighted text |
 | `[label](url)` | external link — underlined and marked with a trailing ↗ to distinguish it from internal references; opens in system browser |
+| `https://…` (bare) | a bare `http(s)://` URL (no `[…](…)`) autolinks: shown as itself, underlined and clickable, opens in the system browser. Recognized at a word boundary; trailing sentence punctuation and an unbalanced `)` are excluded. No ↗ (the URL is self-evidently external). The source text is unchanged (round-trips) |
 | `![alt](path-or-url)` | inline image; relative paths resolve against `<graph-root>/assets/`. Display sizes accept Obsidian's `![alt\|W](src)` / `![alt\|WxH](src)` and Logseq's `![alt](src){:height H, :width W}` suffix (either dimension may appear alone). Knopo emits the pipe form when resizing |
 | `[[Page Name]]` | page reference (§6), rendered in the accent color. **Display vs. identity:** the link *target* is the literal name in the file, but the rendered *text* is the page's display title — a date reference like `[[2026-06-10]]` shows as "Jun 10th, 2026". Faint `[[ ]]` brackets around the name are an optional per-app viewing preference (off by default), not stored in the file |
 | `((uuid))` | block reference (§7) |

@@ -93,6 +93,38 @@ import Foundation
         )
     }
 
+    @Test func bareURLAutolinks() {
+        expectEqual(
+            InlineParser.parse("see https://example.com/x now"),
+            [.text("see "), .autolink("https://example.com/x"), .text(" now")]
+        )
+        expectEqual(InlineParser.parse("http://a.b"), [.autolink("http://a.b")])
+        // Trailing sentence punctuation is shed from the link.
+        expectEqual(
+            InlineParser.parse("go to https://example.com."),
+            [.text("go to "), .autolink("https://example.com"), .text(".")]
+        )
+        // A `)` is kept when balanced, dropped when it closes surrounding text.
+        expectEqual(
+            InlineParser.parse("(https://en.wikipedia.org/wiki/A_(b))"),
+            [.text("("), .autolink("https://en.wikipedia.org/wiki/A_(b)"), .text(")")]
+        )
+    }
+
+    @Test func autolinkBoundariesAndExclusions() {
+        // Not at a word boundary → plain text (no partial-word links).
+        expectEqual(InlineParser.parse("xhttps://a.b"), [.text("xhttps://a.b")])
+        // A scheme with no host isn't a link.
+        expectEqual(InlineParser.parse("https://"), [.text("https://")])
+        // A formal link still wins; the destination isn't separately autolinked.
+        expectEqual(
+            InlineParser.parse("[x](https://a.b)"),
+            [.link(label: "x", url: "https://a.b")]
+        )
+        // Inside a code span the URL stays literal code.
+        expectEqual(InlineParser.parse("`https://a.b`"), [.code("https://a.b")])
+    }
+
     @Test func pipeImageSizes() {
         expectEqual(
             InlineParser.parse("![a|363](x.png)"),
