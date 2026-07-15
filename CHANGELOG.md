@@ -2,6 +2,24 @@
 
 Notable changes per release, newest first. Dates are release dates.
 
+## v0.4.0 (2026-07-16)
+
+Images, live TODO checkboxes in queries and embeds, and a native find bar.
+
+**New**
+- Insert images by dragging files in from Finder, pasting (a copied file or a screenshot), or the `/image` command. Drag an image's right edge to resize it. Sizes use `![alt|width]` (Obsidian) or Logseq's `{:width}` suffix - both are read, the pipe form is written.
+- Check TODO / DONE items on and off directly in `{{query}}` results and `{{embed}}` blocks; the toggle updates the source block wherever it lives.
+- Bare `http(s)://` URLs are clickable in rendered text without needing `[...](...)`.
+- Select several blocks and press `Tab` / `Shift+Tab` to indent or outdent them together.
+
+**Improved**
+- The find bar (`Cmd+F`) is rebuilt from native controls - a real search field, a prev/next stepper, and a toolbar-material strip. It focuses reliably even when you were mid-edit, and typing stays fast on large pages.
+- Right-clicking inside a block now shows a relevant menu instead of the stock text-editing one.
+
+**Fixed**
+- Pasting multi-line text into a quote block keeps it as one block instead of splitting it into several.
+- TODO checkboxes no longer pushed the bullet out of alignment or added extra spacing before the next block.
+
 ## v0.3.0 (2026-07-09)
 
 Everseq is now **Knopo**. Same app, new name: the download, the app bundle, and the `knopo://` link scheme all follow. A graph's index and settings folder is now `.knopo/` (the old `.everseq/` folder is ignored; the index rebuilds automatically, but per-graph favourites and sidebar layout do not carry over).
