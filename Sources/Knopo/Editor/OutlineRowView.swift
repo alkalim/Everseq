@@ -110,6 +110,10 @@ final class OutlineRowCell: NSTableCellView {
         renderedView.onImageResize = { [weak self] index, width in
             self?.callbacks.resizeImage(index, width)
         }
+        renderedView.onContextMenu = { [weak self] event in
+            guard let self else { return }
+            self.callbacks.showContextMenu(event, self.renderedView)
+        }
         // Backgrounds sit behind the text so a code/embed block reads as one
         // filled box (full content width, no per-line gaps). The color box is
         // furthest back so it tints the whole block (incl. when focused/editing).
@@ -433,6 +437,12 @@ final class RenderedTextView: NSTextView {
     var onHoverPageLink: (String, NSRect) -> Void = { _, _ in }
     var onHoverEnded: () -> Void = {}
     var onImageResize: (_ imageIndex: Int, _ width: CGFloat) -> Void = { _, _ in }
+    /// Right-click shows the block context menu (Copy as Markdown, etc.), not the
+    /// stock text-view menu — whose Copy would serialize the *rendered* attributed
+    /// string (image/checkbox attachments as `U+FFFC`, `↗` on links, display-title
+    /// refs). Handled here (no `super`) so the view also never steals first
+    /// responder, which would then route a following Cmd+C to that same junk copy.
+    var onContextMenu: (NSEvent) -> Void = { _ in }
 
     private var hoverWork: DispatchWorkItem?
     private var hoverRange: NSRange?
@@ -552,6 +562,10 @@ final class RenderedTextView: NSTextView {
         // Anything else (including empty space inside a query/embed region)
         // focuses the block, so a query block can still be clicked to edit.
         onFocusRequest(characterIndexForInsertion(at: point))
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onContextMenu(event) // block menu; deliberately no super (see onContextMenu)
     }
 
     private func imageHandle(at point: NSPoint) -> (index: Int, frame: NSRect)? {

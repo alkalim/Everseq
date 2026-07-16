@@ -997,14 +997,34 @@ final class OutlineEditorController: NSObject {
     }
 
     private func copySelection() {
+        // Copy exactly the selected rows (re-based to the shallowest one's
+        // depth), not each block's whole subtree — selecting a parent plus one
+        // child must not drag in the parent's *unselected* children. Exception:
+        // a collapsed block's children are hidden and can't be selected, so its
+        // full subtree is included.
         let doc = app.document(for: pageName)
-        let markdown = topMostSelectedRows().compactMap { row -> String? in
-            guard let block = doc.blocks.block(id: rows[row].block.id) else { return nil }
-            return OutlineOps.copyMarkdown(block)
-        }.joined()
-        guard !markdown.isEmpty else { return }
+        let selected = selectedRows.sorted().filter { rows.indices.contains($0) }
+        guard let baseDepth = selected.map({ rows[$0].depth }).min() else { return }
+        var out = ""
+        for row in selected {
+            // Resolve the live block (row caches go stale for a block whose
+            // descendant was just edited — see `copySubtreeMarkdown`).
+            guard let block = doc.blocks.block(id: rows[row].block.id) else { continue }
+            let pad = String(repeating: "  ", count: max(0, rows[row].depth - baseDepth))
+            if !block.children.isEmpty, block.collapsed {
+                for line in OutlineOps.copyMarkdown(block).components(separatedBy: "\n")
+                where !line.isEmpty {
+                    out += pad + line + "\n"
+                }
+            } else {
+                let lines = block.content.isEmpty ? [""] : block.content.components(separatedBy: "\n")
+                out += pad + "- " + lines[0] + "\n"
+                for line in lines.dropFirst() { out += pad + "  " + line + "\n" }
+            }
+        }
+        guard !out.isEmpty else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(markdown, forType: .string)
+        NSPasteboard.general.setString(out, forType: .string)
     }
 
     /// Cmd+V in node-selection mode: paste the clipboard's blocks right after the
@@ -1375,6 +1395,23 @@ final class OutlineEditorController: NSObject {
     // MARK: - Context menu (SPEC §7.1, §13)
 
     private func showContextMenu(for id: UUID, event: NSEvent, in view: NSView) {
+        // Right-clicking a block that's part of a multi-block selection acts on
+        // the whole selection (like Finder), not just that one block.
+        if selectedRows.count > 1,
+           let row = rows.firstIndex(where: { $0.block.id == id }), selectedRows.contains(row) {
+            let menu = NSMenu()
+            let copy = NSMenuItem(title: "Copy \(selectedRows.count) Blocks",
+                                  action: #selector(copySelectionAction), keyEquivalent: "")
+            copy.target = self
+            menu.addItem(copy)
+            menu.addItem(.separator())
+            let delete = NSMenuItem(title: "Delete \(selectedRows.count) Blocks",
+                                    action: #selector(deleteSelectionAction), keyEquivalent: "")
+            delete.target = self
+            menu.addItem(delete)
+            NSMenu.popUpContextMenu(menu, with: event, for: view)
+            return
+        }
         let menu = NSMenu()
         let copyRef = NSMenuItem(
             title: "Copy Block Reference", action: #selector(copyBlockRef(_:)), keyEquivalent: ""
@@ -1455,6 +1492,9 @@ final class OutlineEditorController: NSObject {
         reloadAndFocus(focusedBlockID, selection: focusedBlockID != nil ? editor.selectedRange() : nil)
     }
 
+    @objc private func copySelectionAction() { copySelection() }
+    @objc private func deleteSelectionAction() { deleteSelection() }
+
     @objc private func copyBlockRef(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UUID else { return }
         // Persist `id::` so the reference stays durable (SPEC §7.1).
@@ -1466,11 +1506,14 @@ final class OutlineEditorController: NSObject {
     }
 
     @objc private func copySubtreeMarkdown(_ sender: NSMenuItem) {
+        // Read the live document, not the row cache: after typing in a child, a
+        // parent row's cached `.children` still holds the child's stale (often
+        // empty) content, so copying from it drops or blanks that child.
         guard let id = sender.representedObject as? UUID,
-              let index = rows.firstIndex(where: { $0.block.id == id }) else { return }
+              let block = app.document(for: pageName).blocks.block(id: id) else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(OutlineOps.copyMarkdown(rows[index].block), forType: .string)
+        pasteboard.setString(OutlineOps.copyMarkdown(block), forType: .string)
     }
 
     @objc private func deleteBlockAction(_ sender: NSMenuItem) {
