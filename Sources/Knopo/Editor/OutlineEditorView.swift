@@ -187,7 +187,11 @@ final class OutlineEditorController: NSObject {
 
     // Node selection (SPEC §13): block-level multi-select when not editing.
     private var selectedRows: Set<Int> = []
+    /// The fixed end of a keyboard shift-selection; `selectionActive` is the end
+    /// that Shift+↑/↓ moves. Together they let Shift+↑ shrink a downward
+    /// selection (and vice versa) instead of always growing.
     private var selectionAnchor: Int?
+    private var selectionActive: Int?
     /// The one controller that currently holds a node-selection. Several outline
     /// editors can be on screen at once (journal home, right-sidebar panes), but
     /// a selection is global: establishing one here clears any other's.
@@ -861,7 +865,7 @@ final class OutlineEditorController: NSObject {
 
     private var hasSelection: Bool { !selectedRows.isEmpty }
 
-    private func setSelection(_ rows: Set<Int>, anchor: Int?) {
+    private func setSelection(_ rows: Set<Int>, anchor: Int?, active: Int? = nil) {
         if rows.isEmpty {
             if Self.selectionOwner === self { Self.selectionOwner = nil }
         } else {
@@ -871,6 +875,7 @@ final class OutlineEditorController: NSObject {
         }
         selectedRows = rows
         selectionAnchor = anchor
+        selectionActive = active ?? anchor   // the moving end for Shift+↑/↓
         tableView.reloadData()
     }
 
@@ -922,7 +927,7 @@ final class OutlineEditorController: NSObject {
             pasteSelection()
             return true
         case 0 where flags.contains(.command): // Cmd+A
-            setSelection(Set(rows.indices), anchor: 0)
+            setSelection(Set(rows.indices), anchor: 0, active: rows.count - 1)
             return true
         default:
             return false
@@ -930,16 +935,31 @@ final class OutlineEditorController: NSObject {
     }
 
     private func stepSelection(up: Bool, extend: Bool) {
-        let bound = up ? (selectedRows.min() ?? 0) - 1 : (selectedRows.max() ?? -1) + 1
-        guard rows.indices.contains(bound) else { return }
+        let anchor = selectionAnchor ?? selectedRows.min() ?? 0
         if extend {
-            selectedRows.insert(bound)
+            // Move the active end one row; Shift toward the anchor shrinks the
+            // selection, away from it grows — the range is anchor…active.
+            let active = selectionActive ?? farSelectedEnd(from: anchor)
+            let next = active + (up ? -1 : 1)
+            guard rows.indices.contains(next) else { return }
+            selectionAnchor = anchor
+            selectionActive = next
+            setSelection(Set(min(anchor, next)...max(anchor, next)), anchor: anchor, active: next)
+            tableView.scrollRowToVisible(next)
         } else {
-            selectedRows = [bound]
-            selectionAnchor = bound
+            // Plain ↑/↓ collapses to a single block just past the current edge.
+            let bound = up ? (selectedRows.min() ?? 0) - 1 : (selectedRows.max() ?? -1) + 1
+            guard rows.indices.contains(bound) else { return }
+            setSelection([bound], anchor: bound, active: bound)
+            tableView.scrollRowToVisible(bound)
         }
-        tableView.reloadData()
-        tableView.scrollRowToVisible(bound)
+    }
+
+    /// The selected row farthest from the anchor — the end a Shift+↑/↓ moves when
+    /// no explicit active end is tracked yet.
+    private func farSelectedEnd(from anchor: Int) -> Int {
+        let lo = selectedRows.min() ?? anchor, hi = selectedRows.max() ?? anchor
+        return (anchor - lo) >= (hi - anchor) ? lo : hi
     }
 
     /// Click-driven selection: shift extends a contiguous range from the
@@ -954,7 +974,7 @@ final class OutlineEditorController: NSObject {
             else { next.insert(index); anchor = index }
             setSelection(next, anchor: anchor)
         } else if extend, let anchor = selectionAnchor {
-            setSelection(Set(min(anchor, index)...max(anchor, index)), anchor: anchor)
+            setSelection(Set(min(anchor, index)...max(anchor, index)), anchor: anchor, active: index)
         } else {
             setSelection([index], anchor: index)
         }
