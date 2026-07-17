@@ -524,16 +524,27 @@ final class RenderedTextView: NSTextView {
             guard let start = tcs.location(tcs.documentRange.location, offsetBy: range.location),
                   let end = tcs.location(start, offsetBy: range.length),
                   let textRange = NSTextRange(location: start, end: end) else { continue }
-            // `.highlight` segments are the box geometry TextKit 2 itself uses
-            // for selection/background drawing: full line height, uniform across
-            // mixed fonts on the line.
-            tlm.enumerateTextSegments(in: textRange, type: .highlight, options: []) { _, frame, _, _ in
+            // `.standard` segments hug their own line's glyphs, so a wrapped run
+            // hugs the text on every line (no fill to the trailing margin) and
+            // each line stays vertically aligned. But one line can yield several
+            // segments (the mono code and the proportional padding split at the
+            // font boundary); merge each line's into one rect before filling, or
+            // the translucent fill would darken where overlapping pills seam.
+            var lineRects: [CGRect] = []
+            tlm.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, frame, _, _ in
                 guard frame.width > 0 else { return true }
-                // Horizontal padding is real (thin spaces inside the run), so the
-                // pill hugs the segment; -1 just softens the rounded edge.
-                let pill = frame.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -1, dy: 0)
-                NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+                if let i = lineRects.firstIndex(where: {
+                    abs($0.minY - frame.minY) < 1 && abs($0.height - frame.height) < 1
+                }) {
+                    lineRects[i] = lineRects[i].union(frame)
+                } else {
+                    lineRects.append(frame)
+                }
                 return true
+            }
+            for rect in lineRects {
+                let pill = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -1, dy: -1)
+                NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
             }
         }
     }
