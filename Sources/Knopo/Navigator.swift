@@ -91,8 +91,12 @@ final class Navigator: ObservableObject {
     /// request that the block be scrolled to and flashed. Used by every
     /// "result" surface (query, backlinks, tag view) so they behave alike.
     func navigateToBlock(pageName: String, blockID: UUID, content: String, inSidebar: Bool) {
+        // Capture the index's preorder position now: the target page is parsed
+        // fresh on open, so an un-persisted block's id won't match there, and
+        // content alone is ambiguous (duplicates, empty blocks).
+        let position = (try? app.store.cache.position(ofBlock: blockID)) ?? nil
         highlightTarget = BlockHighlight(
-            pageKey: PageName.key(pageName), blockID: blockID, content: content)
+            pageKey: PageName.key(pageName), blockID: blockID, content: content, position: position)
         highlightToken += 1
         let target = NavTarget.page(name: pageName)
         inSidebar ? openInRightSidebar(target) : navigate(to: target)

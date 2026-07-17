@@ -386,8 +386,16 @@ final class OutlineEditorController: NSObject {
         guard nav.highlightToken != lastHighlightToken else { return }
         guard let hl = nav.highlightTarget, hl.pageKey == PageName.key(pageName) else { return }
         lastHighlightToken = nav.highlightToken
+        // Match by id, then by the index's preorder position (survives a
+        // re-parse that changed the volatile id), then by content as a last
+        // resort. Empty content never matches — it would flash a random blank.
+        let byPosition = hl.position.flatMap {
+            app.document(for: pageName).blocks.path(atPreorderPosition: $0)
+        }.flatMap { path in rows.firstIndex { $0.path == path } }
         guard let index = rows.firstIndex(where: { $0.block.id == hl.blockID })
-            ?? rows.firstIndex(where: { $0.block.content == hl.content }) else { return }
+            ?? byPosition
+            ?? rows.firstIndex(where: { !hl.content.isEmpty && $0.block.content == hl.content })
+        else { return }
         let blockID = rows[index].block.id
         // Defer so the table finishes its post-reload layout — the row→cell
         // mapping is briefly stale right after reloadData, so a cell fetched too

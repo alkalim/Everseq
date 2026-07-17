@@ -85,6 +85,10 @@ struct BlockHighlight: Equatable {
     let pageKey: String
     let blockID: UUID
     let content: String
+    /// The block's DFS-preorder position in the index — used to relocate it in a
+    /// freshly-parsed page when its volatile id no longer matches (SPEC §7.1),
+    /// so the flash lands even on un-`id::`-persisted blocks.
+    let position: Int?
 }
 
 /// Back/forward history (Cmd+[, Cmd+]).
