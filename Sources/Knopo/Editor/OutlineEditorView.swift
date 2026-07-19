@@ -90,6 +90,53 @@ final class OutlineTableView: NSTableView {
     var onDragExited: (() -> Void)?
     private var lastLayoutWidth: CGFloat = -1
 
+    /// Tracer for AppKit's "reentrant operation in its NSTableView delegate"
+    /// warning (slated to become an assert): counts nesting into the table's
+    /// own layout/update passes — where AppKit runs the delegate callbacks —
+    /// and prints the offending stack when a mutating call arrives from inside
+    /// one. Silent unless the bug fires.
+    private var updateDepth = 0
+
+    private func tracedMutation(_ name: String, _ body: () -> Void) {
+        if updateDepth > 0 {
+            print("REENTRANT NSTableView mutation: \(name)")
+            Thread.callStackSymbols.prefix(16).forEach { print("   \($0)") }
+        }
+        updateDepth += 1
+        defer { updateDepth -= 1 }
+        body()
+    }
+
+    override func reloadData() {
+        tracedMutation("reloadData") { super.reloadData() }
+    }
+
+    override func reloadData(forRowIndexes rowIndexes: IndexSet, columnIndexes: IndexSet) {
+        tracedMutation("reloadData(forRowIndexes:)") {
+            super.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+        }
+    }
+
+    override func insertRows(at indexes: IndexSet,
+                             withAnimation animationOptions: NSTableView.AnimationOptions = []) {
+        tracedMutation("insertRows") {
+            super.insertRows(at: indexes, withAnimation: animationOptions)
+        }
+    }
+
+    override func removeRows(at indexes: IndexSet,
+                             withAnimation animationOptions: NSTableView.AnimationOptions = []) {
+        tracedMutation("removeRows") {
+            super.removeRows(at: indexes, withAnimation: animationOptions)
+        }
+    }
+
+    override func noteHeightOfRows(withIndexesChanged indexSet: IndexSet) {
+        tracedMutation("noteHeightOfRows") {
+            super.noteHeightOfRows(withIndexesChanged: indexSet)
+        }
+    }
+
     override var acceptsFirstResponder: Bool { true }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -116,7 +163,9 @@ final class OutlineTableView: NSTableView {
         if let column = tableColumns.first, abs(column.width - bounds.width) > 0.5 {
             column.width = bounds.width
         }
+        updateDepth += 1
         super.layout()
+        updateDepth -= 1
         if abs(bounds.width - lastLayoutWidth) > 0.5 {
             lastLayoutWidth = bounds.width
             onWidthChange?()
@@ -350,6 +399,7 @@ final class OutlineEditorController: NSObject {
             self.zoom = zoom
             focusedBlockID = nil
             editSessionBefore = nil
+            renderCache.removeAll() // another page's blocks; free the memory
             autocomplete.dismiss()
             editor.removeFromSuperview()
             rebuildRows()
@@ -455,8 +505,71 @@ final class OutlineEditorController: NSObject {
         let doc = app.document(for: pageName)
         rows = OutlineOps.visibleRows(in: doc.blocks, zoomRoot: zoom).map {
             Row(block: $0.block, depth: $0.depth, path: $0.path,
-                hasChildren: $0.hasChildren, rendered: renderBlock($0.block))
+                hasChildren: $0.hasChildren, rendered: cachedRender($0.block))
         }
+        pruneRenderCacheIfNeeded()
+    }
+
+    // MARK: - Render/height cache
+
+    /// Structural edits rebuild every row (`rebuildRows`) and `reloadData`
+    /// re-asks every row's height, though a split/move touches only a couple of
+    /// blocks. Caching the rendered string and its measured height per block —
+    /// validated by a signature of everything the render reads — collapses both
+    /// O(all blocks) passes to O(changed blocks).
+    private struct RenderCacheEntry {
+        var signature: Int
+        var rendered: NSAttributedString
+        /// Measured height at `measuredWidth` (a function of depth and table
+        /// width); a differing width re-measures.
+        var height: CGFloat?
+        var measuredWidth: CGFloat = 0
+    }
+
+    private var renderCache: [UUID: RenderCacheEntry] = [:]
+
+    /// Hash of every input `renderBlock` depends on. Returns nil for blocks
+    /// whose output also depends on *other* blocks/pages and so can't be
+    /// validated from their own inputs: `{{query}}` / `{{embed}}` blocks render
+    /// from the index and must re-run each rebuild (live cross-page refresh
+    /// counts on it). `((block ref))` blocks show the target's text, so any
+    /// commit anywhere (`dataVersion`) re-renders them. When in doubt a
+    /// signature must over-invalidate — a wasted render is invisible, a stale
+    /// one is on screen.
+    private func renderSignature(for block: Block) -> Int? {
+        if block.content.contains("{{query") || block.content.contains("{{embed") {
+            return nil
+        }
+        var hasher = Hasher()
+        hasher.combine(block.content)
+        hasher.combine(block.properties)
+        hasher.combine(BlockRenderer.bracketsEnabled)
+        hasher.combine(BlockRenderer.zoom)
+        hasher.combine(BlockRenderer.density)
+        if block.content.contains("((") { hasher.combine(app.dataVersion) }
+        return hasher.finalize()
+    }
+
+    private func cachedRender(_ block: Block) -> NSAttributedString {
+        guard let signature = renderSignature(for: block) else {
+            renderCache[block.id] = nil
+            return renderBlock(block)
+        }
+        if let entry = renderCache[block.id], entry.signature == signature {
+            return entry.rendered
+        }
+        let rendered = renderBlock(block)
+        renderCache[block.id] = RenderCacheEntry(signature: signature, rendered: rendered)
+        return rendered
+    }
+
+    /// Block ids drift across re-parses (only `id::`-persisted blocks keep
+    /// theirs), so orphaned entries accumulate; drop them once they clearly
+    /// outnumber the live rows.
+    private func pruneRenderCacheIfNeeded() {
+        guard renderCache.count > max(128, rows.count * 2) else { return }
+        let live = Set(rows.map(\.block.id))
+        renderCache = renderCache.filter { live.contains($0.key) }
     }
 
     private func render(_ content: String, todoBlockID: UUID? = nil) -> NSAttributedString {
@@ -762,14 +875,87 @@ final class OutlineEditorController: NSObject {
     /// Full reload from the store, then re-attaches the shared editor to the
     /// given block (if still visible).
     private func reloadAndFocus(_ id: UUID?, selection: NSRange?) {
+        let old = rows
+        let previousFocus = focusedBlockID
         rebuildRows()
-        tableView.reloadData()
+        // Move the focus marker BEFORE applying row updates: unlike the old
+        // full `reloadData()` (lazy — cells materialized after `attachEditor`
+        // updated the marker), row-level reloads reconfigure synchronously, and
+        // `viewFor` embeds the editor into whichever row matches
+        // `focusedBlockID`. With the stale marker, the previously-focused row
+        // would reconfigure into editing state (rendered text hidden) and then
+        // lose the editor to the new row — leaving it blank.
+        let newFocus = id.flatMap { target in
+            rows.contains { $0.block.id == target } ? target : nil
+        }
+        focusedBlockID = newFocus
+        applyRowChanges(from: old)
+        // The row that hosted the editor isn't necessarily in the changed set —
+        // Enter at the end of a block leaves its content (and so its cached
+        // render) untouched — but its cell is in editing state. Reload it so it
+        // shows its rendered content again once the editor moves elsewhere.
+        if let previousFocus, previousFocus != newFocus,
+           let prevIndex = rows.firstIndex(where: { $0.block.id == previousFocus }) {
+            reloadRow(prevIndex)
+        }
         tableView.invalidateIntrinsicContentSize()
-        if let id, rows.contains(where: { $0.block.id == id }) {
-            attachEditor(to: id, selection: selection, startSession: false)
+        if let newFocus {
+            attachEditor(to: newFocus, selection: selection, startSession: false)
         } else {
-            focusedBlockID = nil
             editor.removeFromSuperview()
+        }
+    }
+
+    /// Applies the old→new `rows` difference with row-level table updates. A
+    /// full `reloadData()` drops every materialized cell and re-creates (and
+    /// re-lays-out) each visible one — the dominant cost of a structural edit
+    /// on a large page, where a split/indent/move touches only a couple of
+    /// rows. Unchanged rows keep their live cells untouched.
+    private func applyRowChanges(from old: [Row]) {
+        guard tableView.numberOfRows == old.count else {
+            tableView.reloadData()
+            return
+        }
+        let diff = rows.map(\.block.id).difference(from: old.map(\.block.id))
+        // A wholesale change (an external reload re-mints every volatile id)
+        // diffs into ~2n edits; a plain reload is cheaper.
+        guard diff.count <= max(8, rows.count / 2) else {
+            tableView.reloadData()
+            return
+        }
+        if !diff.isEmpty {
+            tableView.beginUpdates()
+            for change in diff {
+                switch change {
+                case .remove(let offset, _, _):
+                    tableView.removeRows(at: IndexSet(integer: offset), withAnimation: [])
+                case .insert(let offset, _, _):
+                    tableView.insertRows(at: IndexSet(integer: offset), withAnimation: [])
+                }
+            }
+            tableView.endUpdates()
+        }
+        // Surviving rows whose visuals changed re-configure. The rendered
+        // comparison is by identity: the render cache returns the same instance
+        // for an unchanged block, and deliberately fresh instances for
+        // re-rendered ones — including `{{query}}`/`{{embed}}` blocks, which are
+        // never cached so their results stay live.
+        var oldByID: [UUID: Row] = [:]
+        for row in old { oldByID[row.block.id] = row }
+        var changed: [Int] = []
+        for (index, row) in rows.enumerated() {
+            guard let prev = oldByID[row.block.id] else { continue } // freshly inserted
+            if prev.rendered !== row.rendered
+                || prev.depth != row.depth
+                || prev.hasChildren != row.hasChildren
+                || prev.block.collapsed != row.block.collapsed {
+                changed.append(index)
+            }
+        }
+        if !changed.isEmpty {
+            tableView.reloadData(
+                forRowIndexes: IndexSet(changed), columnIndexes: IndexSet(integer: 0))
+            noteHeightChanged(changed)
         }
     }
 
@@ -824,7 +1010,7 @@ final class OutlineEditorController: NSObject {
         attachEditor(to: id, selection: selection, startSession: true)
         if let previous, previous != id,
            let prevIndex = rows.firstIndex(where: { $0.block.id == previous }) {
-            rows[prevIndex].rendered = renderBlock(rows[prevIndex].block)
+            rows[prevIndex].rendered = cachedRender(rows[prevIndex].block)
             reloadRow(prevIndex)
         }
     }
@@ -864,7 +1050,7 @@ final class OutlineEditorController: NSObject {
             tableView.window?.makeFirstResponder(tableView)
         }
         if let index = rows.firstIndex(where: { $0.block.id == id }) {
-            rows[index].rendered = renderBlock(rows[index].block)
+            rows[index].rendered = cachedRender(rows[index].block)
             reloadRow(index)
         }
     }
@@ -1765,6 +1951,20 @@ extension OutlineEditorController: NSTableViewDataSource, NSTableViewDelegate {
             )
             return max(OutlineRowCell.minRowHeight,
                        textHeight + OutlineRowCell.verticalPadding * 2)
+        }
+        // Measuring is a full TextKit layout pass and `reloadData` asks for
+        // every row — reuse the height while the block's render signature and
+        // content width are unchanged.
+        if let signature = renderSignature(for: model.block),
+           var entry = renderCache[model.block.id], entry.signature == signature {
+            if let height = entry.height, entry.measuredWidth == contentWidth {
+                return height
+            }
+            let height = OutlineRowCell.height(for: model.rendered, contentWidth: contentWidth)
+            entry.height = height
+            entry.measuredWidth = contentWidth
+            renderCache[model.block.id] = entry
+            return height
         }
         return OutlineRowCell.height(for: model.rendered, contentWidth: contentWidth)
     }
