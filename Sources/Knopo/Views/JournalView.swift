@@ -17,7 +17,10 @@ struct JournalView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(days, id: \.self) { day in
                     JournalDaySection(day: day)
-                    Divider().padding(.vertical, 16)
+                    // More room above the separator (between the day's last
+                    // block and the rule) than below it, so the rule reads as
+                    // introducing the next day rather than crowding this one.
+                    Divider().padding(.top, 36).padding(.bottom, 16)
                 }
             }
             .padding(20)
