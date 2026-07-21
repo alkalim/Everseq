@@ -6,7 +6,7 @@ no account, no lock-in: the app is just a fast index and editor over a folder of
 `.md` files. Close Knopo and your graph is still a readable, greppable, git-able
 directory of Markdown.
 
-![Knopo showing a page with linked references alongside journal and page cards in the right sidebar](docs/screenshot.png)
+![Knopo showing a film-noir research page - an outline with a live query and tags - with a journal entry and a film page open as cards in the right sidebar](docs/screenshot.png)
 
 ## Features
 
@@ -30,14 +30,26 @@ directory of Markdown.
   `⌘F` find within the current view.
 - **Right sidebar** - `⌘`/`Shift`-click opens pages and tag views as side-by-side
   cards for reference work.
+- **Windows & tabs** - open several graphs at once, each in its own native window
+  or tab (`⌘T` for a tab, **Open Graph…** to repoint one). The same graph open in
+  two places stays in sync.
 - **TODO / DONE** blocks and **slash commands** (`/link`, `/date`, `/embed`, …).
 
 Some smaller touches: favourites & recents, content zoom, adjustable line spacing,
 and block background colors.
 
+See the [user guide](docs/features.md) for full documentation.
+
 ## Why it exists
 
-A fast, low-footprint, files-stay-yours outliner:
+There's no shortage of outliners, and several are polished Logseq clones. Knopo
+exists for a different set of priorities. It's native macOS, no Electron. And it's
+opinionated: it keeps Logseq's block model where that's the right idea, but it
+isn't a clone and doesn't copy every Logseq decision. The bar is quality and
+stability over feature count - each feature is deliberate and vetted, not added
+just because another app has it.
+
+What that looks like in practice:
 
 - **Your files, forever** - Markdown is the source of truth and the app is
   disposable. The graph stays readable, greppable, git-friendly, and byte-stable,
@@ -46,8 +58,24 @@ A fast, low-footprint, files-stay-yours outliner:
   on demand, so memory and startup stay flat as the graph grows.
 - **Fast everything** - a rebuildable SQLite index (`.knopo/cache.db`) backs
   search, backlinks, tags, and queries, keeping navigation cheap on large graphs.
-- **Native, not a browser** - AppKit/SwiftUI, no Electron: small footprint, quick
-  launch, and platform-native text editing and scrolling.
+- **Native, not a browser** - AppKit and SwiftUI. Small, quick to launch, and
+  edited in a real macOS text view (more below).
+
+## What native buys you
+
+Knopo is a real macOS app, not a wasteful Electromonster. What that gets you:
+
+- **A real text editor** - the block you're editing is an actual macOS text view,
+  so typing feels like it does everywhere else on the Mac. Web-based editors
+  rebuild native behaviour by hand and rarely nail it.
+- **Small and quick** - no bundled browser, so it's a few megabytes, launches
+  instantly, and stays light on memory and battery for something you keep open all
+  day. (To be fair, that's mostly a dig at Electron, there are leaner web shells.)
+- **Fits the system** - real macOS window tabs, and dark mode, accent color, and
+  accessibility settings that follow the moment you change them.
+
+The trade-off is reach: Knopo is macOS-only, where web apps run everywhere from one
+codebase.
 
 ## How it compares
 
@@ -63,9 +91,9 @@ A fast, low-footprint, files-stay-yours outliner:
 | Plugins               | ✓        | ✓      | ✓             | ✗         | ✓     | ✗       |
 
 The closest neighbour is **Logseq** - same outliner model, open source, block
-references, embeds, and queries - but Electron. Knopo trades Logseq's
-cross-platform reach for a single-platform native app: smaller footprint, faster
-launch, and platform-native text editing and scrolling.
+references, embeds, and queries - but Electron. Knopo makes the opposite platform
+bet (see *What native buys you* above): native and macOS-only rather than
+cross-platform.
 
 ## Status
 
