@@ -218,8 +218,20 @@ final class Navigator: ObservableObject {
 
     func renamePage(from old: String, to new: String) throws {
         try app.renamePage(from: old, to: new)
-        if case .page(let name, let zoom) = current, PageName.key(name) == PageName.key(old) {
+        let oldKey = PageName.key(old)
+        if case .page(let name, let zoom) = current, PageName.key(name) == oldKey {
             current = .page(name: new, zoom: zoom)
+        }
+        let renamedPanes = rightPanes.map { pane in
+            guard case .page(let name, let zoom) = pane.target,
+                  PageName.key(name) == oldKey else { return pane }
+            return RightPane(
+                target: .page(name: new, zoom: zoom),
+                collapsed: pane.collapsed
+            )
+        }
+        if renamedPanes != rightPanes {
+            rightPanes = renamedPanes
         }
     }
 

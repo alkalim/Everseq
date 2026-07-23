@@ -27,5 +27,10 @@ let package = Package(
             dependencies: ["KnopoCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .testTarget(
+            name: "KnopoTests",
+            dependencies: ["Knopo", "KnopoCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
