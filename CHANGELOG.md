@@ -2,6 +2,19 @@
 
 Notable changes per release, newest first. Dates are release dates.
 
+## v0.5.1 (2026-07-23)
+
+A maintenance release: All Pages refinements and a right-sidebar rename fix.
+
+**New**
+- All Pages sections (Pages, each namespace, and Journal) can be collapsed, and their collapse state is remembered per graph.
+
+**Improved**
+- All Pages keeps journal days in their own section with friendly date titles, newest first, separate from regular and namespaced pages.
+
+**Fixed**
+- Renaming a page updates any open right-sidebar cards showing that page, instead of leaving them pointing at the old name.
+
 ## v0.5.0 (2026-07-19)
 
 Much faster editing on large pages, and a body font-weight setting.
